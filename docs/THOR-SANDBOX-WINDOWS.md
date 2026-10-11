@@ -14,4 +14,3 @@ Download the original THOR from https://github.com/b1glord/ROenglishRE/releases/
 
 The file fingerprint must match or the tool exits before extracting anything. The CI itself runs the same test on GitHub-hosted Windows and stores a 7-day test artifact.
 
-```
