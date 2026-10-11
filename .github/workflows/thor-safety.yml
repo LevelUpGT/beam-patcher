@@ -1,0 +1,47 @@
+# File Path: /.github/workflows/thor-safety.yml
+# Purpose: Build and test THOR parsing/GRF safety patches before merge
+# Module: CI - GitHub Actions YAML
+# Version: 1.0.1
+# Description: Upstream has no Cargo.lock yet; resolve dependencies to exercise format and core tests
+# Dependency Layer: Tool
+
+name: THOR Safety Regression
+on:
+  pull_request:
+    paths:
+      - "beam-formats/**"
+      - "beam-core/**"
+      - ".github/workflows/thor-safety.yml"
+      - "docs/THOR-SAFETY-TEST-PLAN.md"
+  push:
+    branches: [main]
+    paths:
+      - "beam-formats/**"
+      - "beam-core/**"
+      - ".github/workflows/thor-safety.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-thor:
+    name: THOR parser and core regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: beam-thor-safety
+      - name: Test THOR decoder and serialization
+        run: cargo test -p beam-formats --lib
+      - name: Test patch-mode refusal and target selection
+        run: cargo test -p beam-core --lib
+      - name: Compile safe headless patching modules
+        run: cargo check -p beam-core
+
