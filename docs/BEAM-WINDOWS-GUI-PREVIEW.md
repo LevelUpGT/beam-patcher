@@ -62,3 +62,12 @@ Profil-motor sozlesmesi:
 - `hybrid-2022` -> `rpatchur`
 
 `package_sha256` burada **yalnizca beyan edilen 64 karakterlik bir alan** olarak denetlenir; indirilen paket byte'lariyla karsilastirilmaz. Bu taslak hicbir sekilde imzali/saglam bir guncelleme manifesti degildir. Ozel `LevelUpGT/RagnarokClient` deposu, yetkili servis olmadan bu on-kontrole kabul edilmez. Gercek imzali manifest semasi, guven zinciri, key rotation, SHA-256 paket karsilastirmasi ve transaction rollback sonradan ayri guvenlik adimi olarak tasarlanmalidir.
+
+
+## Imzali manifest zarf altyapisi (v0.4, gelistirici onizlemesi)
+
+Yeni Rust servisi yerel JSON zarfindaki `schema`, `key_id`, `payload_b64`, `signature_b64` alanlarini inceler. Base64 acilan **ham payload JSON baytlarinin** onune `LEVELUPGT-BEAM-SIGNED-PREVIEW-V1\\0` baglam prefix'i eklenir ve imza Ed25519 verify_strict ile denetlenir. Imza kontrolu basarili olsa bile paket dosyasi ve SHA-256 asla denetlenmez; kurulum kapali kalir.
+
+**Su an gercek yayin anahtari kayitli degildir.** `config/trusted_signers.rs` icindeki `PRODUCTION_SIGNERS` bos ve Windows komutu herhangi bir imzayi kabul etmez. Sadece Rust unit testlerine `#[cfg(test)]` ile derlenen deterministik test ozel anahtari kullanilir; bu anahtar son kullanici EXE'sinde ve yayin guven zincirinde yer almaz.
+
+Anahtar sahibinin resmen belirlenmesi, offline imzalama, anahtar rotasyonu/iptali ve gercek paket hash/transaction kontrolu sonraki zorunlu release gate'lerdir. Ozel RagnarokClient'a GitHub uygulama kimlik bilgisi gereklidir; ChatGPT GitHub baglantisinin yetkisi BEAM masaustune aktarilmaz.

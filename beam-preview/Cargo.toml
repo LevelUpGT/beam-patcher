@@ -1,12 +1,12 @@
 # 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/Cargo.toml
 # 📌 Amac: BEAM GUI paket bagimliliklarini ve calistirilabilir hedefini tanimlamak
 # 📌 Modul - TOML
-# Version: 0.3.0
-# Aciklama: Manifest metadata on-kontrolu icin yerel service katmani
+# Version: 0.4.0
+# Aciklama: Imzali manifest on-kontrolu icin Ed25519 ve Base64 bagimliliklari
 # Bagimli Oldugu Katman: Controller | Service | Tool
 [package]
 name = "beam-preview"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT"
 description = "Safe graphical preview of BEAM THOR patcher, no game install"
@@ -21,6 +21,8 @@ tauri = { version = "1.5", features = ["dialog-open", "window-close"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
+base64 = "0.22"
+ed25519-dalek = { version = "2.1", default-features = false, features = ["std"] }
 
 [build-dependencies]
 tauri-build = { version = "1.5", features = [] }
