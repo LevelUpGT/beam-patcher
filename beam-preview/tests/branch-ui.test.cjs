@@ -1,7 +1,7 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/tests/branch-ui.test.cjs
 // 📌 Amac: GUI branch listesi secimini ag baglantisi olmadan dogrulamak
 // 📌 Modul - JavaScript Test
-// Version: 0.5.0
+// Version: 0.6.0
 // Aciklama: Deney plani statusleri, profil dal gecerliligi ve eski yanitlari dogrula
 // Bagimli Oldugu Katman: Tool | View | Language
 
@@ -58,8 +58,9 @@ class FakeElement {
 }
 
 function boot(invoke, dialogPath = null) {
+  const pathsToOpen=Array.isArray(dialogPath)?[...dialogPath]:null;
   const ids = ["result", "test", "details", "quit", "clientProfile", "sourceProject",
-    "branchList", "branchSha", "branchNote", "loadBranches", "showAllBranches", "checkManifest", "manifestNote", "checkSignedManifest", "buildExperimentPlan", "experimentPlanOutput"];
+    "branchList", "branchSha", "branchNote", "loadBranches", "showAllBranches", "checkManifest", "manifestNote", "checkSignedManifest", "buildExperimentPlan", "experimentPlanOutput", "verifyLocalPackage"];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
   elements.sourceProject.value = "translation";
   elements.clientProfile.options = [{ value: "hybrid-2022", text: "2022 Hybrid" }];
@@ -67,7 +68,7 @@ function boot(invoke, dialogPath = null) {
   const document = { getElementById: (id) => elements[id] };
   const context = {
     document,
-    window: { __TAURI__: { tauri: { invoke }, dialog: { open: async () => dialogPath } } },
+    window: { __TAURI__: { tauri: { invoke }, dialog: { open: async () => pathsToOpen ? pathsToOpen.shift() ?? null : dialogPath } } },
     Option: class {
       constructor(text, value) { this.text = text; this.value = value; }
     },
@@ -339,3 +340,57 @@ test("an old in-flight experiment result cannot overwrite a changed source", asy
   assert.equal(elements.buildExperimentPlan.disabled, false);
 });
 
+
+test("local package check pins selected profile and SHA while keeping install disabled", async () => {
+  const calls=[];
+  const {elements,fire}=boot(async(command,params)=>{
+    if(command==="preview_list_branches")return [{
+      name:"translation/tr",sha:SHA,short_sha:SHA.slice(0,12),protected:false
+    }];
+    if(command==="preview_verify_local_package"){
+      calls.push(params);
+      return {metadata_matches:true,package_bytes_verified:true,
+        signature_verified:false,installation_allowed:false};
+    }
+    throw new Error("Unexpected command");
+  },["C:/test/preview.json","C:/test/update.thor"]);
+  await fire("loadBranches","click");
+  await fire("verifyLocalPackage","click");
+  assert.equal(calls.length,1);
+  assert.deepEqual({...calls[0]},{
+    manifestPath:"C:/test/preview.json",
+    packagePath:"C:/test/update.thor",
+    profile:"hybrid-2022",project:"translation",branch:"translation/tr",sha:SHA
+  });
+  assert.match(elements.manifestNote.textContent,/MANIFEST GUVENILIR DEGIL/);
+  assert.match(elements.manifestNote.textContent,/Kurulum KAPALI/);
+  assert.equal(elements.verifyLocalPackage.disabled,false);
+});
+
+test("local package check requires an inspected branch",async()=>{
+  const {elements,fire}=boot(async()=>{throw new Error("must not be called");},
+    ["C:/test/preview.json","C:/test/update.thor"]);
+  await fire("verifyLocalPackage","click");
+  assert.match(elements.manifestNote.textContent,/Once GitHub kaynak dalini sec/);
+});
+
+test("stale local package check cannot overwrite changed selection",async()=>{
+  let finish;
+  const {elements,fire}=boot(async(command)=>{
+    if(command==="preview_list_branches")return [{
+      name:"translation/tr",sha:SHA,short_sha:SHA.slice(0,12),protected:false
+    }];
+    if(command==="preview_verify_local_package")return new Promise(resolve=>{finish=resolve;});
+    throw new Error("Unexpected command");
+  },["C:/test/preview.json","C:/test/update.thor"]);
+  await fire("loadBranches","click");
+  const pending=fire("verifyLocalPackage","click");
+  await Promise.resolve();await Promise.resolve();
+  elements.sourceProject.value="beam";
+  fire("sourceProject","change");
+  if(finish)finish({metadata_matches:true,package_bytes_verified:true,
+    signature_verified:false,installation_allowed:false});
+  await pending;
+  assert.match(elements.manifestNote.textContent,/Secim degisti/);
+  assert.doesNotMatch(elements.manifestNote.textContent,/Yerel dosya SHA-256/);
+});

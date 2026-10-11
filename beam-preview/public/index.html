@@ -3,7 +3,7 @@
 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/public/index.html
 📌 Amac: BEAM onizleme istemci profili ve salt okunur branch secim arayuzu
 📌 Modul - HTML
-Version: 0.5.0
+Version: 0.6.0
 Aciklama: Yalnizca gelistiriciye ozel deney plani, durumlar NOT_RUN ve dagitim kapali
 Bagimli Oldugu Katman: View
 -->
@@ -108,6 +108,7 @@ Bagimli Oldugu Katman: View
       <p class="branchHelp">Secili istemci profili ve GitHub dalinin commit kimligi ile yerel bir JSON manifest taslagini karsilastirir. Paket indirimi, imza kontrolu ve oyun kurulumu yapmaz.</p>
       <button id="checkManifest" type="button">Yerel manifest taslagi sec ve incele</button>
       <button id="checkSignedManifest" type="button">Imzali manifest kontrolu (test)</button>
+      <button id="verifyLocalPackage" type="button">Yerel paket SHA-256 kontrolu</button>
       <div class="branchNote" id="manifestNote" role="status" aria-live="polite">Manifest incelenmedi. Gunceleme yetkisi: KAPALI.</div>
     </div>
     <div class="branchCard">
@@ -144,6 +145,7 @@ Bagimli Oldugu Katman: View
   const loadBranches=document.getElementById("loadBranches");
   const checkManifest=document.getElementById("checkManifest");
   const checkSignedManifest=document.getElementById("checkSignedManifest");
+  const verifyLocalPackage=document.getElementById("verifyLocalPackage");
   const manifestNote=document.getElementById("manifestNote");
   const buildExperimentPlan=document.getElementById("buildExperimentPlan");
   const experimentPlanOutput=document.getElementById("experimentPlanOutput");
@@ -334,6 +336,46 @@ Bagimli Oldugu Katman: View
     }finally{
       buildExperimentPlan.disabled=false;
     }
+  });
+
+
+  verifyLocalPackage.addEventListener("click",async ()=>{
+    if(!tauri || !tauri.dialog || !invoke){
+      manifestNote.textContent="Yerel paket kontrolu BEAM Windows uygulamasinda calisir.";
+      return;
+    }
+    const selected=visibleBranches.find(b=>b.name===branchInput.value);
+    if(!selected){
+      manifestNote.textContent="Once GitHub kaynak dalini sec. Kurulum KAPALI.";
+      return;
+    }
+    const version=++manifestSelectionVersion;
+    const profile=profileInput.value;
+    const project=projectInput.value;
+    const branch=selected.name;
+    const sha=selected.sha;
+    try{
+      const manifestPath=await tauri.dialog.open({
+        multiple:false,filters:[{name:"Imzasiz JSON Manifest",extensions:["json"]}]
+      });
+      if(!manifestPath || typeof manifestPath!=="string" || version!==manifestSelectionVersion)return;
+      const packagePath=await tauri.dialog.open({multiple:false});
+      if(!packagePath || typeof packagePath!=="string" || version!==manifestSelectionVersion)return;
+      verifyLocalPackage.disabled=true;
+      manifestNote.textContent="SHA-256 ve paket boyutu okunuyor. Kurulum KAPALI.";
+      const report=await invoke("preview_verify_local_package",{
+        manifestPath,packagePath,profile,project,branch,sha
+      });
+      if(version!==manifestSelectionVersion)return;
+      manifestNote.textContent=report.metadata_matches && report.package_bytes_verified
+        && !report.signature_verified && !report.installation_allowed
+        ? "Yerel dosya SHA-256 imzasiz beyana uydu. MANIFEST GUVENILIR DEGIL. Kurulum KAPALI."
+        : "Paket on-kontrolu guvenilir degil. Kurulum KAPALI.";
+    }catch(e){
+      if(version===manifestSelectionVersion){
+        manifestNote.textContent="Yerel paket reddedildi: "+String(e)+". Kurulum KAPALI.";
+      }
+    }finally{verifyLocalPackage.disabled=false;}
   });
 
   document.getElementById("details").addEventListener("click", async () => {
