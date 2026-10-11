@@ -1,0 +1,365 @@
+<!doctype html>
+<!--
+📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/public/index.html
+📌 Amac: BEAM onizleme istemci profili ve salt okunur branch secim arayuzu
+📌 Modul - HTML
+Version: 0.5.0
+Aciklama: Yalnizca gelistiriciye ozel deney plani, durumlar NOT_RUN ve dagitim kapali
+Bagimli Oldugu Katman: View
+-->
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' tauri: asset:; img-src 'self' data: asset:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'none'">
+  <title>BEAM Patcher Preview — LevelUpGT</title>
+  <style>
+    :root {color-scheme:dark;--bg:#070c16;--panel:#111d30;--muted:#9db0c8;--blue:#66b3ff;--line:rgba(255,255,255,.11);--good:#5de5ad}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 85% -20%,#213a67 0%,transparent 54%),linear-gradient(125deg,#0c172a,#070c16 68%);color:#ecf5ff;font:15px "Segoe UI",system-ui,sans-serif;min-height:100vh}
+    .wrap{max-width:1090px;margin:auto;padding:34px 42px}
+    .head,.mainline,.stats,.actions,.mini{display:flex;align-items:center;justify-content:space-between;gap:16px}
+    .brand{font-weight:850;font-size:22px;letter-spacing:.06em}.brand strong{color:#85c8ff}.sub{font-size:12px;letter-spacing:.20em;color:#8295ae;margin-top:3px;text-transform:uppercase}
+    .pill{border:1px solid #39668c;background:#102a46;color:#b8dffc;border-radius:30px;padding:8px 14px;font-size:12px}
+    .hero{padding:44px 0 18px}.eyebrow{color:#7fb8eb;letter-spacing:.23em;font-size:12px;font-weight:700}.hero h1{font-size:46px;line-height:1.08;letter-spacing:-.03em;margin:14px 0;font-weight:850}.hero p{color:#aab9cd;max-width:610px;line-height:1.6}
+    .headArt{width:230px;height:180px;border:1px solid #2d4a70;border-radius:20px;display:grid;place-items:center;background:radial-gradient(circle,#1c3d67,#102035 68%,#0b1625);box-shadow:0 24px 80px #0004}
+    .orb{width:120px;height:120px;display:grid;place-items:center;border-radius:50%;border:2px solid #86caff;box-shadow:0 0 34px #2c84e45a,inset 0 0 50px #66affd26;font-size:45px;font-weight:900;letter-spacing:-.08em}
+    .panel{padding:23px 25px;border:1px solid var(--line);background:#101d2fdb;border-radius:14px;margin-top:20px}
+    .panel h2{margin:0;font-size:17px}.panel p{font-size:13px;color:var(--muted)}
+    .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:15px}.stat{border-radius:11px;background:#14243b;padding:15px;border:1px solid #263b57}.stat b{display:block;font-size:15px;margin-bottom:5px}.stat small{color:var(--muted)}
+    button{font:600 14px "Segoe UI",sans-serif;border-radius:10px;padding:12px 20px;cursor:pointer;border:1px solid #2f557c;background:#153455;color:#fff}
+    button:hover:not(:disabled){background:#1a4d80}button:focus-visible{outline:2px solid #90d3ff;outline-offset:2px}
+    button.primary{background:#2680d3;border-color:#3794f0}button.primary:hover{background:#3798eb}
+    button:disabled{background:#172232;border-color:#263346;color:#778ca4;cursor:not-allowed}
+    .actions{justify-content:flex-start;margin-top:22px}.msg{font-size:13px;margin:14px 0;color:#b6c9dd;min-height:22px}
+    .ok{color:var(--good)}.err{color:#ff9c9c}
+    .foot{margin-top:22px;color:#8ba3bb;font-size:12px;border-top:1px solid #ffffff15;padding-top:15px;line-height:1.5}
+    .dot{display:inline-block;width:8px;height:8px;background:var(--good);border-radius:50%;margin-right:7px}
+    @media(max-width:760px){.wrap{padding:20px}.headArt{display:none}.hero h1{font-size:34px}.metrics{grid-template-columns:1fr}.actions{flex-wrap:wrap}}
+
+    .branchCard{margin-top:18px;padding:16px;border:1px solid #375273;background:#0b182b;border-radius:11px}
+    .branchCard h3{margin:0 0 6px;font-size:15px}
+    .branchGrid{display:grid;grid-template-columns:1fr 1fr 1.35fr;gap:12px;margin-top:10px;align-items:start}
+    .branchField label{display:block;margin-bottom:6px;font-size:12px;color:#b7c8dd}
+    select{font:13px "Segoe UI",system-ui,sans-serif;width:100%;background:#16273f;border:1px solid #3b5676;border-radius:7px;color:#ecf5ff;padding:8px;max-width:100%}
+    select:focus-visible{outline:2px solid #90d3ff;outline-offset:2px}
+    .branchButton{margin-top:8px;padding:9px 12px;width:100%;font-size:13px}
+    .branchNote{font-size:12px;color:#afc1d7;min-height:20px;margin-top:9px;line-height:1.4}
+    .branchSha{font-size:12px;color:#8bc4ff;word-break:break-all;min-height:16px}
+    .branchHelp{color:#9db0c8;font-size:12px;margin:8px 0 0;line-height:1.45}
+    .branchOptions{margin:11px 0 0;color:#b7c8dd;font-size:12px}
+    .branchOptions label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+    .branchOptions input{accent-color:#2680d3}
+    .labReport{max-height:280px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#080f1b;border:1px solid #344a65;border-radius:8px;padding:12px;font:12px Consolas,monospace;line-height:1.45;color:#c3dbf5}
+    @media(max-width:760px){.branchGrid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main class="wrap">
+  <div class="head">
+    <div><div class="brand">LEVELUP<strong>GT</strong> <span style="font-weight:400;opacity:.7">/ BEAM</span></div><div class="sub">Ragnarok Patcher · Deney Laboratuvari</div></div>
+    <div class="pill"><span class="dot"></span>GELİŞTİRİCİ · DENEYSEL · DAĞITILMAZ</div>
+  </div>
+  <div class="mainline hero">
+    <section><div class="eyebrow">BEAM LAB · GELİŞTİRİCİ ÖNİZLEMESİ</div><h1>Yama altyapısını<br><span style="color:#8cc9ff">güvenle dene.</span></h1><p>Yalnızca dahili geliştirme laboratuvarı. THOR sandbox, GitHub dal karşılaştırmaları ve manifest kontrolleri için kullanılır; oyunculara dağıtılmaz. Oyun dosyalarına dokunulmaz.</p></section>
+    <div class="headArt"><div class="orb">B.</div></div>
+  </div>
+  <section class="panel">
+    <div class="mini"><h2>Deney laboratuvarı</h2><span class="pill">Laboratuvar · v0.5.0</span></div>
+    <div class="metrics">
+      <div class="stat"><b>2015 Eski</b><small>Thor Patcher korunuyor</small></div>
+      <div class="stat"><b>2015 Yeni</b><small>rPatchur, BEAM test adayı</small></div>
+      <div class="stat"><b>2022 Hybrid</b><small>THOR sandbox testi kullanılabilir</small></div>
+    </div>
+
+    <div class="branchCard">
+      <h3>Geliştirme profilleri <span style="color:#86b5e6;font-size:12px;font-weight:400">· GitHub branch görüntüleyici</span></h3>
+      <p class="branchHelp">İstemci türünü ve incelenecek kaynak kod dalını ayrı seç. Bu seçim oyun dosyalarını, yama sunucularını ve kurulu sürümü değiştirmez.</p>
+      <div class="branchGrid">
+        <div class="branchField">
+          <label for="clientProfile">İstemci profili</label>
+          <select id="clientProfile">
+            <option value="old-2015">Eski 2015 · Thor korunuyor</option>
+            <option value="new-2015">Yeni 2015 · rPatchur</option>
+            <option value="hybrid-2022" selected>2022 Hybrid · rPatchur</option>
+          </select>
+        </div>
+        <div class="branchField">
+          <label for="sourceProject">GitHub kaynak deposu</label>
+          <select id="sourceProject">
+            <option value="translation" selected>ROenglishRE · çeviri</option>
+            <option value="beam">BEAM Patcher · geliştirme</option>
+            <option value="client">RagnarokClient · özel repo</option>
+          </select>
+          <button id="loadBranches" class="branchButton" type="button">GitHub dallarını getir</button>
+        </div>
+        <div class="branchField">
+          <label for="branchList">Branch (yalnızca görüntüleme)</label>
+          <select id="branchList" size="4" aria-label="GitHub branch listesi">
+            <option value="">Önce GitHub dallarını getir</option>
+          </select>
+          <div class="branchSha" id="branchSha" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="branchOptions"><label for="showAllBranches"><input type="checkbox" id="showAllBranches"> Tüm dalları göster (eski test, sürüm ve arşiv dalları)</label></div>
+      <div class="branchNote" id="branchNote" role="status" aria-live="polite">Branch listesi çevrimiçi okunur; özel depolar için kimlik doğrulaması ayrıca gerekir.</div>
+    </div>
+    <div class="branchCard">
+      <h3>Manifest on-kontrolu <span style="color:#86b5e6;font-size:12px;font-weight:400">· metadata / imza dogrulanmadi</span></h3>
+      <p class="branchHelp">Secili istemci profili ve GitHub dalinin commit kimligi ile yerel bir JSON manifest taslagini karsilastirir. Paket indirimi, imza kontrolu ve oyun kurulumu yapmaz.</p>
+      <button id="checkManifest" type="button">Yerel manifest taslagi sec ve incele</button>
+      <button id="checkSignedManifest" type="button">Imzali manifest kontrolu (test)</button>
+      <div class="branchNote" id="manifestNote" role="status" aria-live="polite">Manifest incelenmedi. Gunceleme yetkisi: KAPALI.</div>
+    </div>
+    <div class="branchCard">
+      <h3>Deney plani <span style="color:#86b5e6;font-size:12px;font-weight:400">· salt-okunur / JSON</span></h3>
+      <p class="branchHelp">Secilen profil, kaynak repo, branch ve tam SHA icin tekrarlanabilir bir plan olusturur. Kaynak dogrulanmis sayilmaz; gerceklestirilmeyen her test NOT_RUN kalir. Kayit diske yazilmaz.</p>
+      <button id="buildExperimentPlan" type="button">Deney planini olustur</button>
+      <pre id="experimentPlanOutput" class="labReport" role="status" aria-live="polite">Deney plani henuz olusturulmadi.</pre>
+    </div>
+    <div class="actions">
+      <button id="test" class="primary" type="button">THOR Dosyası Seç ve Test Et</button>
+      <button id="details" type="button">Sürüm Bilgisi</button>
+      <button disabled title="Gerçek istemci doğrulaması tamamlanmadı">Güncelle</button>
+      <button disabled title="Bu önizlemede oyun başlatma kapalı">OYNA</button>
+      <button id="quit" type="button">Kapat</button>
+    </div>
+    <div id="result" class="msg" role="status" aria-live="polite">Hazır — yalnızca yerel THOR dosyaları test edilir.</div>
+  </section>
+  <div class="foot">Bu EXE yalnizca dahili gelistirici laboratuvaridir; son kullaniciya dagitilmaz. Gercek Ragnarok klasorunu degistirmez, patch indirmez, oyun acmaz. Windows WebView2 gerektirir.</div>
+</main>
+<script>
+(function () {
+  "use strict";
+  const message = document.getElementById("result");
+  const action = document.getElementById("test");
+  const setMsg = (value, type) => {message.textContent=value;message.className="msg "+(type||"");};
+  const tauri = window.__TAURI__;
+  const invoke = tauri && tauri.tauri && tauri.tauri.invoke;
+
+  const profileInput=document.getElementById("clientProfile");
+  const projectInput=document.getElementById("sourceProject");
+  const branchInput=document.getElementById("branchList");
+  const branchInfo=document.getElementById("branchSha");
+  const branchMessage=document.getElementById("branchNote");
+  const loadBranches=document.getElementById("loadBranches");
+  const checkManifest=document.getElementById("checkManifest");
+  const checkSignedManifest=document.getElementById("checkSignedManifest");
+  const manifestNote=document.getElementById("manifestNote");
+  const buildExperimentPlan=document.getElementById("buildExperimentPlan");
+  const experimentPlanOutput=document.getElementById("experimentPlanOutput");
+  const showAllBranches=document.getElementById("showAllBranches");
+  let visibleBranches=[];
+  let branchRequestVersion=0;
+  let manifestSelectionVersion=0;
+  let experimentSelectionVersion=0;
+  const invalidateExperimentPlan=()=>{
+    experimentSelectionVersion+=1;
+    experimentPlanOutput.textContent="Secim degisti. Yeni deney plani olusturulmasi gerekli.";
+  };
+  const invalidateManifest=()=>{
+    manifestSelectionVersion+=1;
+    manifestNote.textContent="Secim degisti. Manifest yeniden incelenmeli; kurulum kapali.";
+  };
+  // This is a READ-ONLY branch inspector. No updates, downloads or disk writes.
+  const resetBranches=()=>{
+    visibleBranches=[];
+    branchInput.replaceChildren(new Option("GitHub dallarını getir", ""));
+    branchInfo.textContent="";
+  };
+  profileInput.addEventListener("change", ()=>{
+    invalidateExperimentPlan();
+    invalidateManifest();
+    branchMessage.textContent="İstemci profili seçildi: "+profileInput.options[profileInput.selectedIndex].text+
+      ". Gerçek güncelleme sistemi değiştirilmedi.";
+  });
+  projectInput.addEventListener("change",()=>{
+    invalidateExperimentPlan();
+    invalidateManifest();
+    branchRequestVersion+=1;
+    resetBranches();
+    branchMessage.textContent=projectInput.value==="client"
+      ? "RagnarokClient özel repo: branch listesi için güvenli yetkilendirme gerekli."
+      : "Yeni kaynak deposu seçildi; dalları tekrar yükle.";
+  });
+  showAllBranches.addEventListener("change",()=>{
+    invalidateExperimentPlan();
+    invalidateManifest();
+    branchRequestVersion+=1;
+    resetBranches();
+    branchMessage.textContent=showAllBranches.checked
+      ? "Gelişmiş görünüm seçildi. Tüm gerçek dalları görmek için GitHub dallarını getir."
+      : "Standart görünüm seçildi. Aktif dalları görmek için GitHub dallarını getir.";
+  });
+  branchInput.addEventListener("change",()=>{
+    invalidateExperimentPlan();
+    invalidateManifest();
+    const selected=visibleBranches.find(b=>b.name===branchInput.value);
+    branchInfo.textContent=selected
+      ? "Seçili dal: "+selected.name+" · commit "+selected.sha+
+        (selected.protected?" · korumalı dal":"")
+      : "";
+    if(selected){
+      branchMessage.textContent="Salt-okunur seçim: "+selected.name+
+        ". Profilin kurulu oyun dosyaları ve güncelleme kanalı değiştirilmedi.";
+    }
+  });
+  loadBranches.addEventListener("click",async ()=>{
+    if(!invoke){branchMessage.textContent="GitHub erişimi için Windows BEAM uygulaması gerekli.";return;}
+    const project=projectInput.value;
+    const includeAll=showAllBranches.checked;
+    const requestVersion=++branchRequestVersion;
+    invalidateExperimentPlan();
+    invalidateManifest();
+    resetBranches();
+    loadBranches.disabled=true;
+    branchMessage.textContent="GitHub branch listesi okunuyor...";
+    try{
+      const branches=await invoke("preview_list_branches",{project,includeAll});
+      if(projectInput.value!==project || requestVersion!==branchRequestVersion)return;
+      visibleBranches=Array.isArray(branches)?branches:[];
+      branchInput.replaceChildren();
+      if(!visibleBranches.length){
+        branchInput.append(new Option("Dal bulunamadı",""));
+        branchMessage.textContent="Depoda görünür branch bulunamadı.";
+        return;
+      }
+      for(const branch of visibleBranches){
+        branchInput.add(new Option(branch.name+" · "+branch.short_sha,branch.name));
+      }
+      branchInput.selectedIndex=0;
+      branchInput.dispatchEvent(new Event("change"));
+      branchMessage.textContent=visibleBranches.length+" dal gösteriliyor ("+
+        (includeAll?"tüm dallar":"aktif dallar")+"). Bu liste indirme veya kurulum başlatmaz.";
+    }catch(e){
+      if(projectInput.value===project && requestVersion===branchRequestVersion){
+        branchMessage.textContent="Branch listesi alınamadı: "+String(e);
+      }
+    }
+    finally{loadBranches.disabled=false;}
+  });
+
+
+  checkManifest.addEventListener("click",async ()=>{
+    if(!tauri || !tauri.dialog || !invoke){
+      manifestNote.textContent="Manifest on-kontrolu sadece BEAM Windows uygulamasinda calisir.";
+      return;
+    }
+    const selected=visibleBranches.find(b=>b.name===branchInput.value);
+    if(!selected){
+      manifestNote.textContent="Once GitHub deposunu ve bir branch sec. Kurulum kapali.";
+      return;
+    }
+    const profile=profileInput.value;
+    const project=projectInput.value;
+    const branch=selected.name;
+    const sha=selected.sha;
+    const version=++manifestSelectionVersion;
+    try {
+      const path=await tauri.dialog.open({multiple:false,filters:[{name:"JSON Manifest Taslagi",extensions:["json"]}]});
+      if(!path || typeof path!=="string" || version!==manifestSelectionVersion)return;
+      checkManifest.disabled=true;
+      manifestNote.textContent="Manifest metadata alani inceleniyor... Imza ve paket icerigi kontrol edilmiyor.";
+      const report=await invoke("preview_check_manifest",{path,profile,project,branch,sha});
+      if(version!==manifestSelectionVersion)return;
+      manifestNote.textContent=report.metadata_matches
+        ? "Metadata eslesti ("+report.profile+" / "+report.engine+" / "+report.channel+"). IMZA ve PAKET DOGRULANMADI. Kurulum izni: KAPALI."
+        : "Manifest on-kontrolu eslesmedi. Kurulum izni: KAPALI.";
+    }catch(e){
+      if(version===manifestSelectionVersion)manifestNote.textContent="Manifest reddedildi: "+String(e)+". Kurulum kapali.";
+    }finally{checkManifest.disabled=false;}
+  });
+
+
+  checkSignedManifest.addEventListener("click",async ()=>{
+    if(!tauri || !tauri.dialog || !invoke){
+      manifestNote.textContent="Imza on-kontrolu yalnizca BEAM Windows uygulamasinda calisir.";
+      return;
+    }
+    const selected=visibleBranches.find(b=>b.name===branchInput.value);
+    if(!selected){
+      manifestNote.textContent="Once kaynak depoyu ve bir branch sec. Kurulum kapali.";
+      return;
+    }
+    const profile=profileInput.value;
+    const project=projectInput.value;
+    const branch=selected.name;
+    const sha=selected.sha;
+    const version=++manifestSelectionVersion;
+    try{
+      const path=await tauri.dialog.open({
+        multiple:false,filters:[{name:"Ed25519 Imzali JSON Zarf",extensions:["json"]}]
+      });
+      if(!path || typeof path!=="string" || version!==manifestSelectionVersion)return;
+      checkSignedManifest.disabled=true;
+      manifestNote.textContent="Ed25519 imzasi denetleniyor. Paket ve kurulum yetkisi KAPALI.";
+      const report=await invoke("preview_check_signed_manifest",{path,profile,project,branch,sha});
+      if(version!==manifestSelectionVersion)return;
+      manifestNote.textContent=report.signature_verified && !report.installation_allowed
+        ? "Imza gecerli. Paket baytlari hala DOGRULANMADI; kurulum KAPALI."
+        : "Imza guvenilir degil veya kontrol eksik. Kurulum KAPALI.";
+    }catch(e){
+      if(version===manifestSelectionVersion){
+        manifestNote.textContent="Imzali manifest reddedildi: "+String(e)+". Kurulum KAPALI.";
+      }
+    }finally{
+      checkSignedManifest.disabled=false;
+    }
+  });
+
+  buildExperimentPlan.addEventListener("click",async ()=>{
+    if(!invoke){
+      experimentPlanOutput.textContent="Deney planlama yalnizca BEAM Windows uygulamasinda calisir.";
+      return;
+    }
+    const selected=visibleBranches.find(b=>b.name===branchInput.value);
+    if(!selected){
+      experimentPlanOutput.textContent="Once kaynak depodaki bir dali getir ve sec.";
+      return;
+    }
+    const version=++experimentSelectionVersion;
+    const profile=profileInput.value;
+    const project=projectInput.value;
+    buildExperimentPlan.disabled=true;
+    experimentPlanOutput.textContent="Deney plani hazirlaniyor...";
+    try{
+      const report=await invoke("preview_experiment_plan",{
+        profile, project, branch:selected.name, sha:selected.sha
+      });
+      if(version!==experimentSelectionVersion)return;
+      experimentPlanOutput.textContent=JSON.stringify(report,null,2);
+    }catch(e){
+      if(version===experimentSelectionVersion){
+        experimentPlanOutput.textContent="Deney plani reddedildi: "+String(e);
+      }
+    }finally{
+      buildExperimentPlan.disabled=false;
+    }
+  });
+
+  document.getElementById("details").addEventListener("click", async () => {
+    if (!invoke) {setMsg("Windows Tauri bağlantısı bulunamadı.", "err");return;}
+    try {
+      const status=await invoke("preview_status");
+      setMsg(status.name+" | "+status.mode+" | oyun dosyaları: değiştirilemez.", "ok");
+    } catch(e) {setMsg(String(e), "err");}
+  });
+  document.getElementById("quit").addEventListener("click", async () => {
+    if (tauri && tauri.window && tauri.window.appWindow) await tauri.window.appWindow.close();
+    else setMsg("Pencereyi sağ üstteki X düğmesiyle kapat.", "");
+  });
+  action.addEventListener("click", async () => {
+    if (!tauri || !tauri.dialog || !invoke) {setMsg("THOR testi için BEAM Windows uygulamasını aç.", "err");return;}
+    try {
+      const path=await tauri.dialog.open({multiple:false,filters:[{name:"THOR",extensions:["thor"]}]});
+      if(!path || typeof path !== "string")return;
+      action.disabled=true;
+      setMsg("THOR doğrulanıyor; geçici test klasörü kullanılıyor...", "");
+      const report=await invoke("preview_verify_thor",{path});
+      setMsg("Başarılı: "+report.installed_files+" dosya kontrol edildi, "+report.removed_files+" silme; GRF değişmedi.", "ok");
+    } catch(e) {setMsg("THOR testi başarısız: "+String(e), "err");}
+    finally {action.disabled=false;}
+  });
+}());
+</script>
+</body>
+</html>

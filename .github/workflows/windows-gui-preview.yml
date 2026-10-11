@@ -1,0 +1,110 @@
+# 📄 Dosya Yolu: /LevelUpGT/beam-patcher/.github/workflows/windows-gui-preview.yml
+# 📌 Amac: Windows BEAM GUI onizlemesini ve bagimli Rust kutuphanelerini test etmek
+# 📌 Modul - YAML
+# Version: 1.5.0
+# Aciklama: Manifest metadata preflight ve branch secim testleriyle GUI'yi derle
+# Bagimli Oldugu Katman: Tool
+name: Windows GUI Preview
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "beam-core/**"
+      - "beam-formats/**"
+      - "beam-ui/**"
+      - "beam-patcher/**"
+      - "beam-preview/**"
+      - "docs/BEAM-WINDOWS-GUI-PREVIEW.md"
+      - ".github/workflows/windows-gui-preview.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: beam-preview-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows-gui:
+    name: Isolated GUI build and verified preview window
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: beam-gui-tauri-v1
+      - name: Install Node.js for offline GUI contract tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify branch UI identity and stale-response safety
+        shell: pwsh
+        run: |
+          node --test beam-preview/tests/branch-ui.test.cjs
+          if ($LASTEXITCODE -ne 0) { throw "BEAM branch selector contract tests failed" }
+      - name: Test readonly GitHub branch profile safety
+        shell: pwsh
+        run: |
+          cargo test --release --package beam-preview --bin BEAM-Patcher-Preview
+          if ($LASTEXITCODE -ne 0) { throw "BEAM branch profile validation tests failed" }
+      - name: Compile desktop GUI from actual BEAM app
+        shell: pwsh
+        run: |
+          cargo build --release --package beam-preview --bin BEAM-Patcher-Preview
+          if ($LASTEXITCODE -ne 0) { throw "BEAM Tauri desktop GUI build failed" }
+      - name: Smoke-test real GUI process and window
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path "target/release/BEAM-Patcher-Preview.exe").Path
+          $proc = Start-Process -FilePath "$exe" -PassThru
+          $windowAppeared = $false
+          try {
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+              Start-Sleep -Seconds 1
+              $proc.Refresh()
+              if ($proc.HasExited) { throw "BEAM GUI exited before opening a window (code $($proc.ExitCode))" }
+              if ($proc.MainWindowHandle -ne 0) {
+                Write-Host "BEAM GUI has main window handle $($proc.MainWindowHandle); title: $($proc.MainWindowTitle)"
+                if ($proc.MainWindowTitle -notlike "*BEAM*Preview*") {
+                  throw "Unexpected legacy GUI title: $($proc.MainWindowTitle)"
+                }
+                $windowAppeared = $true
+                break
+              }
+            }
+            if (-not $windowAppeared) {
+              throw "BEAM GUI did not expose a Windows desktop window in 40 seconds"
+            }
+          }
+          finally {
+            if (-not $proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+      - name: Validate compiled Windows PE
+        shell: pwsh
+        run: |
+          $exe = "target/release/BEAM-Patcher-Preview.exe"
+          if (-not (Test-Path $exe)) { throw "Desktop EXE missing" }
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host "GUI_EXE_SHA256=$hash"
+          New-Item -Force -ItemType Directory "gui-preview-package" | Out-Null
+          Copy-Item $exe "gui-preview-package/"
+          Copy-Item "docs/BEAM-WINDOWS-GUI-PREVIEW.md" "gui-preview-package/README.md"
+          Set-Content -Path "gui-preview-package/BEAM-Patcher-Preview.exe.sha256" -Value "$hash  BEAM-Patcher-Preview.exe" -Encoding ascii
+      - name: Upload diagnostic GUI binary, no game assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: BEAM-Patcher-Windows-GUI-Preview
+          path: gui-preview-package/
+          if-no-files-found: error
+          retention-days: 7
