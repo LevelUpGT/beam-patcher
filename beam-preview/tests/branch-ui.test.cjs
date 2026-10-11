@@ -1,8 +1,8 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/tests/branch-ui.test.cjs
 // 📌 Amac: GUI branch listesi secimini ag baglantisi olmadan dogrulamak
 // 📌 Modul - JavaScript Test
-// Version: 0.4.0
-// Aciklama: Branch kimligi, manifest on-kontrol ve eski yanitlari dogrula
+// Version: 0.5.0
+// Aciklama: Deney plani statusleri, profil dal gecerliligi ve eski yanitlari dogrula
 // Bagimli Oldugu Katman: Tool | View | Language
 
 "use strict";
@@ -59,7 +59,7 @@ class FakeElement {
 
 function boot(invoke, dialogPath = null) {
   const ids = ["result", "test", "details", "quit", "clientProfile", "sourceProject",
-    "branchList", "branchSha", "branchNote", "loadBranches", "showAllBranches", "checkManifest", "manifestNote", "checkSignedManifest"];
+    "branchList", "branchSha", "branchNote", "loadBranches", "showAllBranches", "checkManifest", "manifestNote", "checkSignedManifest", "buildExperimentPlan", "experimentPlanOutput"];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
   elements.sourceProject.value = "translation";
   elements.clientProfile.options = [{ value: "hybrid-2022", text: "2022 Hybrid" }];
@@ -257,3 +257,85 @@ test("signed preview cannot start until repository branch is selected", async ()
   await fire("checkSignedManifest", "click");
   assert.match(elements.manifestNote.textContent, /Once kaynak depoyu/);
 });
+
+test("experiment plan keeps selected full SHA and marks every check NOT_RUN", async () => {
+  const calls = [];
+  const { elements, fire } = boot(async (command, params) => {
+    if (command === "preview_list_branches") return [{
+      name: "translation/tr", sha: SHA, short_sha: SHA.slice(0, 12), protected: false
+    }];
+    if (command === "preview_experiment_plan") {
+      calls.push(params);
+      return {
+        schema: "levelupgt.beam.experiment-plan.v1",
+        audience: "DEVELOPER_ONLY", status: "PLAN_ONLY",
+        profile: params.profile, branch: params.branch, commit_sha: params.sha,
+        source_verification: "USER_SELECTION_UNVERIFIED",
+        installation_allowed: false, game_launch_allowed: false,
+        player_distribution_allowed: false,
+        tests: [{ id: "in_game_client", status: "NOT_RUN" }]
+      };
+    }
+    throw new Error("Unexpected command");
+  });
+  await fire("loadBranches", "click");
+  await fire("buildExperimentPlan", "click");
+  assert.equal(calls.length, 1);
+  assert.deepEqual({ ...calls[0] }, {
+    profile: "hybrid-2022", project: "translation", branch: "translation/tr", sha: SHA
+  });
+  const plan = JSON.parse(elements.experimentPlanOutput.textContent);
+  assert.equal(plan.status, "PLAN_ONLY");
+  assert.equal(plan.source_verification, "USER_SELECTION_UNVERIFIED");
+  assert.ok(plan.tests.every(item => item.status === "NOT_RUN"));
+  assert.equal(plan.player_distribution_allowed, false);
+  assert.equal(elements.buildExperimentPlan.disabled, false);
+});
+
+test("experiment plan is refused without a selected GitHub branch", async () => {
+  const { elements, fire } = boot(async () => { throw new Error("must not invoke"); });
+  await fire("buildExperimentPlan", "click");
+  assert.match(elements.experimentPlanOutput.textContent, /Once kaynak depodaki bir dali/);
+});
+
+test("experiment plan is invalidated when the selected profile or branch changes", async () => {
+  const { elements, fire } = boot(async (command) => {
+    if (command === "preview_list_branches") return [
+      { name: "master", sha: SHA, short_sha: SHA.slice(0, 12), protected: false },
+      { name: "translation/tr", sha: SHA, short_sha: SHA.slice(0, 12), protected: false }
+    ];
+    if (command === "preview_experiment_plan") return { status: "PLAN_ONLY" };
+    throw new Error("Unexpected command");
+  });
+  await fire("loadBranches", "click");
+  await fire("buildExperimentPlan", "click");
+  assert.match(elements.experimentPlanOutput.textContent, /PLAN_ONLY/);
+  elements.clientProfile.value = "hybrid-2022";
+  fire("clientProfile", "change");
+  assert.match(elements.experimentPlanOutput.textContent, /Secim degisti/);
+  await fire("buildExperimentPlan", "click");
+  elements.branchList.value = "translation/tr";
+  fire("branchList", "change");
+  assert.match(elements.experimentPlanOutput.textContent, /Secim degisti/);
+});
+
+test("an old in-flight experiment result cannot overwrite a changed source", async () => {
+  let finish;
+  const { elements, fire } = boot(async (command) => {
+    if (command === "preview_list_branches") return [{
+      name: "master", sha: SHA, short_sha: SHA.slice(0, 12), protected: false
+    }];
+    if (command === "preview_experiment_plan") return new Promise(resolve => { finish = resolve; });
+    throw new Error("Unexpected command");
+  });
+  await fire("loadBranches", "click");
+  const pending = fire("buildExperimentPlan", "click");
+  elements.sourceProject.value = "beam";
+  fire("sourceProject", "change");
+  finish({ status: "PLAN_ONLY" });
+  await pending;
+  assert.match(elements.experimentPlanOutput.textContent, /Secim degisti/);
+  assert.doesNotMatch(elements.experimentPlanOutput.textContent, /PLAN_ONLY/);
+  assert.equal(elements.buildExperimentPlan.disabled, false);
+});
+
