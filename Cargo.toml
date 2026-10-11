@@ -3,7 +3,8 @@ members = [
     "beam-patcher",
     "beam-core",
     "beam-formats",
-    "beam-ui"
+    "beam-ui",
+    "beam-preview"
 ]
 resolver = "2"
 

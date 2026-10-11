@@ -1,7 +1,7 @@
 # File Path: /.github/workflows/windows-gui-preview.yml
 # Purpose: Build and smoke-check graphical BEAM desktop launcher on hosted Windows
 # Module: CI - Windows
-# Version: 1.2.0
+# Version: 1.3.0
 # Description: Compile actual Tauri window; test-only artifact, no live game install
 # Dependency Layer: Tool
 name: Windows GUI Preview
@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build-windows-gui:
-    name: Windows native GUI build and window-open smoke
+    name: Isolated GUI build and verified preview window
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -37,7 +37,7 @@ jobs:
       - name: Compile desktop GUI from actual BEAM app
         shell: pwsh
         run: |
-          cargo build --release --package beam-patcher --bin BEAM-Patcher-Preview
+          cargo build --release --package beam-preview --bin BEAM-Patcher-Preview
           if ($LASTEXITCODE -ne 0) { throw "BEAM Tauri desktop GUI build failed" }
       - name: Smoke-test real GUI process and window
         shell: pwsh
@@ -53,6 +53,9 @@ jobs:
               if ($proc.HasExited) { throw "BEAM GUI exited before opening a window (code $($proc.ExitCode))" }
               if ($proc.MainWindowHandle -ne 0) {
                 Write-Host "BEAM GUI has main window handle $($proc.MainWindowHandle); title: $($proc.MainWindowTitle)"
+                if ($proc.MainWindowTitle -notlike "*BEAM*Preview*") {
+                  throw "Unexpected legacy GUI title: $($proc.MainWindowTitle)"
+                }
                 $windowAppeared = $true
                 break
               }

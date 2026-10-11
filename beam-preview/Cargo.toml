@@ -1,0 +1,18 @@
+[package]
+name = "beam-preview"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Safe graphical preview of BEAM THOR patcher, no game install"
+
+[[bin]]
+name = "BEAM-Patcher-Preview"
+path = "src/main.rs"
+
+[dependencies]
+beam-core = { path = "../beam-core" }
+tauri = { version = "1.5", features = ["dialog-open", "window-close"] }
+serde = { workspace = true }
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }

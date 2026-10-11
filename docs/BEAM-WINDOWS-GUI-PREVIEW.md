@@ -23,4 +23,4 @@ Başlatmada pencere gelmezse \`Microsoft Edge WebView2 Runtime\` kurulumu / anti
 
 \`thor_smoke.exe\` yalnızca komut satırı test aracıdır ve çift tıkla pencere açmaz. Bu proje gerçek bir **Tauri Windows desktop GUI** oluşturur. Şimdilik önizlemede OYNA/Güncelle özellikleri kapalıdır; gerçek istemciye bağlanacak tam launcher ilerideki ayrı doğrulama aşamasıdır.
 
-Kaynak: \`beam-ui/preview-web/index.html\`, \`beam-ui/src/preview.rs\`, \`beam-ui/tauri.preview.conf.json\`, \`beam-patcher/src/preview.rs\`. İstemciler: 2015 Thor, yeni 2015 rPatchur, 2022 rPatchur kanalları mevcut halleriyle çalışmaya devam eder.
+Kaynak: `beam-preview/public/index.html`, `beam-preview/src/main.rs`, `beam-preview/tauri.conf.json`. Bagimsiz crate; eski BEAM Tauri UI yuklenmez. İstemciler: 2015 Thor, yeni 2015 rPatchur, 2022 rPatchur kanalları mevcut halleriyle çalışmaya devam eder.

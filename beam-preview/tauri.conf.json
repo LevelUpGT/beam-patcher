@@ -1,11 +1,11 @@
 {
   "build": {
-    "devPath": "preview-web/index.html",
-    "distDir": "preview-web",
+    "devPath": "public/index.html",
+    "distDir": "public",
     "withGlobalTauri": true
   },
   "package": {
-    "productName": "BEAM Patcher Preview",
+    "productName": "LevelUpGT BEAM GUI Preview",
     "version": "0.1.0"
   },
   "tauri": {
@@ -36,7 +36,7 @@
     },
     "windows": [
       {
-        "title": "BEAM Patcher | LevelUpGT — Güvenli Önizleme",
+        "title": "BEAM GUI Preview - LevelUpGT",
         "width": 1016,
         "height": 680,
         "resizable": false,
