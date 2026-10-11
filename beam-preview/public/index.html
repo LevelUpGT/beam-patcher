@@ -3,8 +3,8 @@
 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/public/index.html
 📌 Amac: BEAM onizleme istemci profili ve salt okunur branch secim arayuzu
 📌 Modul - HTML
-Version: 0.2.1
-Aciklama: Ayni commit'i gosteren branch'leri dogru ayirt et; eski istekleri ele
+Version: 0.2.2
+Aciklama: Normal dal gorunumunu sade tut, arsiv ve test dallarini istege bagli goster
 Bagimli Oldugu Katman: View
 -->
 <html lang="tr">
@@ -46,6 +46,9 @@ Bagimli Oldugu Katman: View
     .branchNote{font-size:12px;color:#afc1d7;min-height:20px;margin-top:9px;line-height:1.4}
     .branchSha{font-size:12px;color:#8bc4ff;word-break:break-all;min-height:16px}
     .branchHelp{color:#9db0c8;font-size:12px;margin:8px 0 0;line-height:1.45}
+    .branchOptions{margin:11px 0 0;color:#b7c8dd;font-size:12px}
+    .branchOptions label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+    .branchOptions input{accent-color:#2680d3}
     @media(max-width:760px){.branchGrid{grid-template-columns:1fr}}
   </style>
 </head>
@@ -96,6 +99,7 @@ Bagimli Oldugu Katman: View
           <div class="branchSha" id="branchSha" aria-live="polite"></div>
         </div>
       </div>
+      <div class="branchOptions"><label for="showAllBranches"><input type="checkbox" id="showAllBranches"> Tüm dalları göster (eski test, sürüm ve arşiv dalları)</label></div>
       <div class="branchNote" id="branchNote" role="status" aria-live="polite">Branch listesi çevrimiçi okunur; özel depolar için kimlik doğrulaması ayrıca gerekir.</div>
     </div>
     <div class="actions">
@@ -124,6 +128,7 @@ Bagimli Oldugu Katman: View
   const branchInfo=document.getElementById("branchSha");
   const branchMessage=document.getElementById("branchNote");
   const loadBranches=document.getElementById("loadBranches");
+  const showAllBranches=document.getElementById("showAllBranches");
   let visibleBranches=[];
   let branchRequestVersion=0;
   // This is a READ-ONLY branch inspector. No updates, downloads or disk writes.
@@ -143,6 +148,13 @@ Bagimli Oldugu Katman: View
       ? "RagnarokClient özel repo: branch listesi için güvenli yetkilendirme gerekli."
       : "Yeni kaynak deposu seçildi; dalları tekrar yükle.";
   });
+  showAllBranches.addEventListener("change",()=>{
+    branchRequestVersion+=1;
+    resetBranches();
+    branchMessage.textContent=showAllBranches.checked
+      ? "Gelişmiş görünüm seçildi. Tüm gerçek dalları görmek için GitHub dallarını getir."
+      : "Standart görünüm seçildi. Aktif dalları görmek için GitHub dallarını getir.";
+  });
   branchInput.addEventListener("change",()=>{
     const selected=visibleBranches.find(b=>b.name===branchInput.value);
     branchInfo.textContent=selected
@@ -157,12 +169,13 @@ Bagimli Oldugu Katman: View
   loadBranches.addEventListener("click",async ()=>{
     if(!invoke){branchMessage.textContent="GitHub erişimi için Windows BEAM uygulaması gerekli.";return;}
     const project=projectInput.value;
+    const includeAll=showAllBranches.checked;
     const requestVersion=++branchRequestVersion;
     resetBranches();
     loadBranches.disabled=true;
     branchMessage.textContent="GitHub branch listesi okunuyor...";
     try{
-      const branches=await invoke("preview_list_branches",{project});
+      const branches=await invoke("preview_list_branches",{project,includeAll});
       if(projectInput.value!==project || requestVersion!==branchRequestVersion)return;
       visibleBranches=Array.isArray(branches)?branches:[];
       branchInput.replaceChildren();
@@ -176,7 +189,8 @@ Bagimli Oldugu Katman: View
       }
       branchInput.selectedIndex=0;
       branchInput.dispatchEvent(new Event("change"));
-      branchMessage.textContent=visibleBranches.length+" branch bulundu. Bu liste indirme veya kurulum başlatmaz.";
+      branchMessage.textContent=visibleBranches.length+" dal gösteriliyor ("+
+        (includeAll?"tüm dallar":"aktif dallar")+"). Bu liste indirme veya kurulum başlatmaz.";
     }catch(e){
       if(projectInput.value===project && requestVersion===branchRequestVersion){
         branchMessage.textContent="Branch listesi alınamadı: "+String(e);
