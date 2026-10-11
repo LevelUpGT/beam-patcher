@@ -1,8 +1,8 @@
 # File Path: /.github/workflows/thor-safety.yml
 # Purpose: Build and test THOR parsing/GRF safety patches before merge
 # Module: CI - GitHub Actions YAML
-# Version: 1.1.0
-# Description: Run Linux Rust CI and FURY-GAMES Windows regression for loose THOR patch writes
+# Version: 1.2.0
+# Description: Exercise pinned real Hybrid THOR, hosted Windows and FURY-GAMES safety checks
 # Dependency Layer: Tool
 
 name: THOR Safety Regression
@@ -42,8 +42,46 @@ jobs:
         run: cargo test -p beam-formats --lib
       - name: Test patch-mode refusal and target selection
         run: cargo test -p beam-core --lib
+      - name: Download pinned real 2022 Hybrid THOR fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 3 \
+            --output "$RUNNER_TEMP/turkuaz-hybrid-2022.thor" \
+            "https://github.com/b1glord/ROenglishRE/releases/download/rpatchur-2022-hybrid-test/turkuaz-2022-hybrid-8cfc3211f8eb.thor"
+          echo "e18d5368f44feaa1569c1b2f7893b4d51167bd6bb03ab93e4d6ae108a147b2c8  $RUNNER_TEMP/turkuaz-hybrid-2022.thor" | sha256sum --check
+
+      - name: Test published Hybrid THOR in disposable client directory
+        env:
+          BEAM_REAL_HYBRID_THOR: ${{ runner.temp }}/turkuaz-hybrid-2022.thor
+        run: cargo test -p beam-core --lib real_roenglishre_2022_hybrid_thor_installs_in_disposable_directory -- --nocapture
+
       - name: Compile safe headless patching modules
         run: cargo check -p beam-core
+
+  test-thor-windows-hosted:
+    name: Windows hosted THOR regression
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: beam-thor-windows
+      - name: Test THOR format on Windows
+        shell: pwsh
+        run: |
+          cargo test -p beam-formats --lib
+          if ($LASTEXITCODE -ne 0) { throw "THOR format tests failed" }
+      - name: Test client recovery and file locking on Windows
+        shell: pwsh
+        run: |
+          cargo test -p beam-core --lib
+          if ($LASTEXITCODE -ne 0) { throw "Client transaction and recovery tests failed" }
 
   test-thor-windows:
     name: FURY Windows THOR installer smoke
