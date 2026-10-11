@@ -1,7 +1,7 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/src/services/manifest_preflight.rs
 // 📌 Amac: Yerel manifest taslagini secilen istemci ve sabit commit ile karsilastirmak
 // 📌 Modul - Service Rust
-// Version: 1.0.0
+// Version: 1.1.0
 // Aciklama: Yalnizca metadata dogrular; imza, paket icerigi ve kurulum onayi vermez
 // Bagimli Oldugu Katman: Config | Tool | View | Language
 
@@ -37,6 +37,18 @@ pub struct ManifestPreflightReport {
     pub signature_verified: bool,
     pub installation_allowed: bool,
     pub message: &'static str,
+}
+
+pub(crate) struct PackageClaim {
+    pub sha256: String,
+    pub size: u64,
+}
+
+// Use after check(...) has already validated the selected profile and source.
+pub(crate) fn package_claim(bytes: &[u8]) -> Result<PackageClaim, String> {
+    let claim: ManifestPreview = serde_json::from_slice(bytes)
+        .map_err(|_| "Manifest paket beyanlari okunamadi.".to_string())?;
+    Ok(PackageClaim { sha256: claim.package_sha256, size: claim.package_size })
 }
 
 fn is_sha256(value: &str) -> bool {
