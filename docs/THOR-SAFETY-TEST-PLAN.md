@@ -3,8 +3,8 @@
 File Path: /docs/THOR-SAFETY-TEST-PLAN.md
 Purpose: Explain forked BEAM's initial THOR correctness and safety tests
 Module: ClientDistribution — Markdown
-Version: 1.2.0
-Description: Persistent recovery journal and fail-closed resume on interrupted client file transactions.
+Version: 1.3.0
+Description: Persistent recovery journal, unsafe path rejection and client-root single-writer lock.
 Dependency Layer: Tool
 
 Source: MIT-licensed https://github.com/beamguides/beam-patcher; original LICENSE retained.
@@ -29,8 +29,10 @@ Our fork: https://github.com/b1glord/beam-patcher. Upstream baseline pinned to f
 - A **persistent PREPARING / COMMITTING / COMMITTED recovery journal** is now created on the client's volume. Backups and staged files are synchronized before changes begin. On the next patch check, a stale COMMITTING transaction is rolled back from verified backups; COMMITTED transaction leftovers are cleaned.
 - Recovery is checked even if the remote patch list reports zero pending updates. Missing backups, unsafe recovery paths or unknown transaction folders stop patching rather than guessing or removing evidence.
 - Windows junction/reparse points, THOR writes to `.patch_cache`, and updates to `.beam-patch-txn-*` are refused. Added simulated interrupted-update regression cases for restore, incomplete preparing, committed cleanup, missing backup and protected directories.
-- **Still experimental:** journal/metadata directory durability, transactional coordination with the applied-patch cache, Windows file locks and forced-power-loss acceptance remain unverified. Do not distribute to players until Windows and crash-injection tests pass.
+- **Still experimental:** journal/metadata directory durability, transactional coordination with the applied-patch cache, Windows lock contention and forced-power-loss acceptance remain unverified. Do not distribute to players until Windows and crash-injection tests pass.
 - No 2015 historical patch state, Thor Patcher config, rPatchur feed or game EXE has been modified.
+
+- A cross-process exclusive `.beam-patch.lock` prevents simultaneous writers from applying patches to the same client directory. The OS releases the lock when the process terminates. THOR entries cannot overwrite patcher lock or recovery metadata.
 
 CI exercises `beam-formats` and `beam-core` parser and transaction tests. It is NOT equivalent to a Windows GRF + client acceptance test.
 

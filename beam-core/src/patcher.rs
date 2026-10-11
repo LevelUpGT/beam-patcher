@@ -27,6 +27,37 @@ fn validate_thor_destination(thor: &Thor, configured_grf: &str) -> Result<()> {
     Ok(())
 }
 
+
+/// Cross-process single-writer lock for each Ragnarok client root. It is held
+/// through patch application and released automatically when the process exits.
+fn try_lock_client_root(root: &Path) -> Result<std::fs::File> {
+    use fs2::FileExt;
+
+    let path = root.join(".beam-patch.lock");
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) => {
+            if !meta.is_file() || meta.file_type().is_symlink() {
+                return Err(Error::PatchFailed("Unsafe client patch lock file".to_string()));
+            }
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if meta.file_attributes() & 0x400 != 0 {
+                    return Err(Error::PatchFailed("Reparse-point patch lock rejected".to_string()));
+                }
+            }
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err.into()),
+    }
+    let file = std::fs::OpenOptions::new()
+        .create(true).read(true).write(true).open(path)?;
+    file.try_lock_exclusive().map_err(|e| Error::PatchFailed(format!(
+        "Another BEAM instance is already updating this client: {e}"
+    )))?;
+    Ok(file)
+}
+
 /// Remote filenames must not create arbitrary paths inside the shared temp folder.
 fn validate_patch_filename(name: &str) -> Result<()> {
     validate_client_path(name)?;
@@ -49,7 +80,7 @@ fn checked_client_destination(root: &Path, name: &str) -> Result<PathBuf> {
     validate_client_path(name)?;
     let normalized = name.replace('\\', "/");
     let first_segment = normalized.split('/').next().unwrap_or("");
-    if first_segment.starts_with(TXN_PREFIX) || first_segment.eq_ignore_ascii_case(".patch_cache") {
+    if first_segment.starts_with(TXN_PREFIX) || (first_segment.eq_ignore_ascii_case(".patch_cache") || first_segment.eq_ignore_ascii_case(".beam-patch.lock")) {
         return Err(Error::PatchFailed("Protected patcher metadata path".to_string()));
     }
     let segments: Vec<_> = normalized.split('/').collect();
@@ -494,8 +525,11 @@ impl Patcher {
     where
         F: FnMut(usize, usize, u64, u64) + Send + 'static,
     {
-        // Recover an interrupted transaction even when the remote list is empty.
-        self.ensure_recovered_client_state()?;
+        // Guard both GRF and loose file updates with a single client lock.
+        // This includes the empty-list path: recover unfinished updates first.
+        let client_root = self.get_game_root()?;
+        let _lock = try_lock_client_root(&client_root)?;
+        recover_interrupted_client_transactions(&client_root)?;
         if patches.is_empty() {
             return Ok(());
         }
@@ -598,7 +632,9 @@ impl Patcher {
 
     /// One-shot apply: opens its own GRF, applies, saves.
     pub async fn apply_patch(&self, patch_path: &Path) -> Result<()> {
-        self.ensure_recovered_client_state()?;
+        let client_root = self.get_game_root()?;
+        let _lock = try_lock_client_root(&client_root)?;
+        recover_interrupted_client_transactions(&client_root)?;
         if patch_path.extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| extension.eq_ignore_ascii_case("thor"))
@@ -730,7 +766,9 @@ impl Patcher {
     }
 
     fn ensure_recovered_client_state(&self) -> Result<()> {
-        recover_interrupted_client_transactions(&self.get_game_root()?)
+        let root = self.get_game_root()?;
+        let _lock = try_lock_client_root(&root)?;
+        recover_interrupted_client_transactions(&root)
     }
 
     fn get_game_root(&self) -> Result<PathBuf> {
@@ -767,6 +805,23 @@ impl Patcher {
 mod thor_guards_tests {
     use super::*;
 
+
+
+    #[test]
+    fn client_lock_rejects_parallel_updaters() {
+        let root = std::env::temp_dir().join(format!(
+            "beam-loose-lock-{}-{}", std::process::id(), 806
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let first = try_lock_client_root(&root).expect("first writer gets lock");
+        assert!(try_lock_client_root(&root).is_err(), "second writer must fail");
+        drop(first);
+        let second = try_lock_client_root(&root).expect("released lock can be obtained");
+        drop(second);
+        assert!(checked_client_destination(&root, ".beam-patch.lock").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn recovers_interrupted_client_write_from_durable_backup() {
