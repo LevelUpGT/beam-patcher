@@ -27,6 +27,18 @@
     .foot{margin-top:22px;color:#8ba3bb;font-size:12px;border-top:1px solid #ffffff15;padding-top:15px;line-height:1.5}
     .dot{display:inline-block;width:8px;height:8px;background:var(--good);border-radius:50%;margin-right:7px}
     @media(max-width:760px){.wrap{padding:20px}.headArt{display:none}.hero h1{font-size:34px}.metrics{grid-template-columns:1fr}.actions{flex-wrap:wrap}}
+
+    .branchCard{margin-top:18px;padding:16px;border:1px solid #375273;background:#0b182b;border-radius:11px}
+    .branchCard h3{margin:0 0 6px;font-size:15px}
+    .branchGrid{display:grid;grid-template-columns:1fr 1fr 1.35fr;gap:12px;margin-top:10px;align-items:start}
+    .branchField label{display:block;margin-bottom:6px;font-size:12px;color:#b7c8dd}
+    select{font:13px "Segoe UI",system-ui,sans-serif;width:100%;background:#16273f;border:1px solid #3b5676;border-radius:7px;color:#ecf5ff;padding:8px;max-width:100%}
+    select:focus-visible{outline:2px solid #90d3ff;outline-offset:2px}
+    .branchButton{margin-top:8px;padding:9px 12px;width:100%;font-size:13px}
+    .branchNote{font-size:12px;color:#afc1d7;min-height:20px;margin-top:9px;line-height:1.4}
+    .branchSha{font-size:12px;color:#8bc4ff;word-break:break-all;min-height:16px}
+    .branchHelp{color:#9db0c8;font-size:12px;margin:8px 0 0;line-height:1.45}
+    @media(max-width:760px){.branchGrid{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -45,6 +57,38 @@
       <div class="stat"><b>2015 Eski</b><small>Thor Patcher korunuyor</small></div>
       <div class="stat"><b>2015 Yeni</b><small>rPatchur, BEAM test adayı</small></div>
       <div class="stat"><b>2022 Hybrid</b><small>THOR sandbox testi kullanılabilir</small></div>
+    </div>
+
+    <div class="branchCard">
+      <h3>Geliştirme profilleri <span style="color:#86b5e6;font-size:12px;font-weight:400">· GitHub branch görüntüleyici</span></h3>
+      <p class="branchHelp">İstemci türünü ve incelenecek kaynak kod dalını ayrı seç. Bu seçim oyun dosyalarını, yama sunucularını ve kurulu sürümü değiştirmez.</p>
+      <div class="branchGrid">
+        <div class="branchField">
+          <label for="clientProfile">İstemci profili</label>
+          <select id="clientProfile">
+            <option value="old-2015">Eski 2015 · Thor korunuyor</option>
+            <option value="new-2015">Yeni 2015 · rPatchur</option>
+            <option value="hybrid-2022" selected>2022 Hybrid · rPatchur</option>
+          </select>
+        </div>
+        <div class="branchField">
+          <label for="sourceProject">GitHub kaynak deposu</label>
+          <select id="sourceProject">
+            <option value="translation" selected>ROenglishRE · çeviri</option>
+            <option value="beam">BEAM Patcher · geliştirme</option>
+            <option value="client">RagnarokClient · özel repo</option>
+          </select>
+          <button id="loadBranches" class="branchButton" type="button">GitHub dallarını getir</button>
+        </div>
+        <div class="branchField">
+          <label for="branchList">Branch (yalnızca görüntüleme)</label>
+          <select id="branchList" size="4" aria-label="GitHub branch listesi">
+            <option value="">Önce GitHub dallarını getir</option>
+          </select>
+          <div class="branchSha" id="branchSha" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="branchNote" id="branchNote" role="status" aria-live="polite">Branch listesi çevrimiçi okunur; özel depolar için kimlik doğrulaması ayrıca gerekir.</div>
     </div>
     <div class="actions">
       <button id="test" class="primary" type="button">THOR Dosyası Seç ve Test Et</button>
@@ -65,6 +109,67 @@
   const setMsg = (value, type) => {message.textContent=value;message.className="msg "+(type||"");};
   const tauri = window.__TAURI__;
   const invoke = tauri && tauri.tauri && tauri.tauri.invoke;
+
+  const profileInput=document.getElementById("clientProfile");
+  const projectInput=document.getElementById("sourceProject");
+  const branchInput=document.getElementById("branchList");
+  const branchInfo=document.getElementById("branchSha");
+  const branchMessage=document.getElementById("branchNote");
+  const loadBranches=document.getElementById("loadBranches");
+  let visibleBranches=[];
+  // This is a READ-ONLY branch inspector. No updates, downloads or disk writes.
+  const resetBranches=()=>{
+    visibleBranches=[];
+    branchInput.replaceChildren(new Option("GitHub dallarını getir", ""));
+    branchInfo.textContent="";
+  };
+  profileInput.addEventListener("change", ()=>{
+    branchMessage.textContent="İstemci profili seçildi: "+profileInput.options[profileInput.selectedIndex].text+
+      ". Gerçek güncelleme sistemi değiştirilmedi.";
+  });
+  projectInput.addEventListener("change",()=>{
+    resetBranches();
+    branchMessage.textContent=projectInput.value==="client"
+      ? "RagnarokClient özel repo: branch listesi için güvenli yetkilendirme gerekli."
+      : "Yeni kaynak deposu seçildi; dalları tekrar yükle.";
+  });
+  branchInput.addEventListener("change",()=>{
+    const selected=visibleBranches.find(b=>b.sha===branchInput.value);
+    branchInfo.textContent=selected
+      ? "Seçili dal: "+selected.name+" · commit "+selected.short_sha+
+        (selected.protected?" · korumalı dal":"")
+      : "";
+    if(selected){
+      branchMessage.textContent="Salt-okunur seçim: "+selected.name+
+        ". Profilin kurulu oyun dosyaları ve güncelleme kanalı değiştirilmedi.";
+    }
+  });
+  loadBranches.addEventListener("click",async ()=>{
+    if(!invoke){branchMessage.textContent="GitHub erişimi için Windows BEAM uygulaması gerekli.";return;}
+    const project=projectInput.value;
+    resetBranches();
+    loadBranches.disabled=true;
+    branchMessage.textContent="GitHub branch listesi okunuyor...";
+    try{
+      const branches=await invoke("preview_list_branches",{project});
+      if(projectInput.value!==project)return;
+      visibleBranches=Array.isArray(branches)?branches:[];
+      branchInput.replaceChildren();
+      if(!visibleBranches.length){
+        branchInput.append(new Option("Dal bulunamadı",""));
+        branchMessage.textContent="Depoda görünür branch bulunamadı.";
+        return;
+      }
+      for(const branch of visibleBranches){
+        branchInput.add(new Option(branch.name+" · "+branch.short_sha,branch.sha));
+      }
+      branchInput.selectedIndex=0;
+      branchInput.dispatchEvent(new Event("change"));
+      branchMessage.textContent=visibleBranches.length+" branch bulundu. Bu liste indirme veya kurulum başlatmaz.";
+    }catch(e){branchMessage.textContent="Branch listesi alınamadı: "+String(e);}
+    finally{loadBranches.disabled=false;}
+  });
+
   document.getElementById("details").addEventListener("click", async () => {
     if (!invoke) {setMsg("Windows Tauri bağlantısı bulunamadı.", "err");return;}
     try {

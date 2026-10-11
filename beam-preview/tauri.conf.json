@@ -6,7 +6,7 @@
   },
   "package": {
     "productName": "LevelUpGT BEAM GUI Preview",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "tauri": {
     "allowlist": {
@@ -38,7 +38,7 @@
       {
         "title": "BEAM GUI Preview - LevelUpGT",
         "width": 1016,
-        "height": 680,
+        "height": 860,
         "resizable": false,
         "fullscreen": false,
         "decorations": true

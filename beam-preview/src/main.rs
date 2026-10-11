@@ -59,11 +59,121 @@ async fn preview_verify_thor(path: String) -> Result<ThorPreviewReport, String> 
     }).await.map_err(|e| format!("THOR test islemi sonlandi: {e}"))?
 }
 
+
+/// Branch browsing is read-only; only public, hardcoded GitHub repositories
+/// are accessible. It does not change installed game files or patch channels.
+#[derive(serde::Serialize)]
+struct BranchSummary {
+    name: String,
+    short_sha: String,
+    sha: String,
+    protected: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct GithubBranch {
+    name: String,
+    commit: GithubCommit,
+    #[serde(default)]
+    protected: bool,
+}
+
+#[derive(serde::Deserialize)]
+struct GithubCommit {
+    sha: String,
+}
+
+fn public_branch_source(project: &str) -> Result<&'static str, &'static str> {
+    match project {
+        "beam" => Ok("LevelUpGT/beam-patcher"),
+        "translation" => Ok("b1glord/ROenglishRE"),
+        "client" => Err("RagnarokClient ozel bir repo. Token kullanmadan branch listesi alinamaz."),
+        _ => Err("Desteklenmeyen GitHub projesi."),
+    }
+}
+
+fn parse_github_branches(bytes: &[u8]) -> Result<Vec<BranchSummary>, String> {
+    if bytes.len() > 256 * 1024 {
+        return Err("GitHub yaniti beklenenden buyuk.".to_string());
+    }
+    let branches: Vec<GithubBranch> = serde_json::from_slice(bytes)
+        .map_err(|e| format!("GitHub branch yaniti okunamadi: {e}"))?;
+    let mut items = Vec::with_capacity(branches.len());
+    for branch in branches {
+        let valid_name = !branch.name.is_empty()
+            && branch.name.len() <= 255
+            && !branch.name.chars().any(char::is_control);
+        if !valid_name || branch.commit.sha.len() != 40
+            || !branch.commit.sha.bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            return Err("GitHub branch ismi veya SHA gecersiz.".to_string());
+        }
+        items.push(BranchSummary {
+            name: branch.name,
+            short_sha: branch.commit.sha[..12].to_string(),
+            sha: branch.commit.sha,
+            protected: branch.protected,
+        });
+    }
+    Ok(items)
+}
+
+#[tauri::command]
+async fn preview_list_branches(project: String) -> Result<Vec<BranchSummary>, String> {
+    let repo = public_branch_source(&project).map_err(|message| message.to_string())?;
+    // No credentials, user-entered URLs or redirect to a game-patch server.
+    // The GitHub API response is used for display only.
+    let url = format!("https://api.github.com/repos/{repo}/branches?per_page=100");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(12))
+        .build()
+        .map_err(|e| format!("HTTPS istemcisi hazirlanamadi: {e}"))?;
+    let response = client
+        .get(&url)
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .header(reqwest::header::USER_AGENT, "LevelUpGT-BEAM-GUI-Preview/0.2")
+        .send()
+        .await
+        .map_err(|e| format!("GitHub ulasilamadi: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("GitHub branch sorgusu reddedildi: {e}"))?;
+    let bytes = response.bytes().await
+        .map_err(|e| format!("GitHub yaniti okunamadi: {e}"))?;
+    parse_github_branches(bytes.as_ref())
+}
+
+#[cfg(test)]
+mod branch_profiles_tests {
+    use super::*;
+
+    #[test]
+    fn restricts_branch_queries_to_public_allowlisted_repos() {
+        assert_eq!(public_branch_source("beam").unwrap(), "LevelUpGT/beam-patcher");
+        assert_eq!(public_branch_source("translation").unwrap(), "b1glord/ROenglishRE");
+        assert!(public_branch_source("client").is_err());
+        assert!(public_branch_source("../../user/unsafe").is_err());
+        assert!(public_branch_source("https://evil.example").is_err());
+    }
+
+    #[test]
+    fn validates_branch_sha_without_downloading_any_patches() {
+        let sample = br#"[{"name":"translation/tr","commit":{"sha":"8cfc3211f8ebba2542fe6b6a114a33af0871367e"},"protected":false}]"#;
+        let branches = parse_github_branches(sample).unwrap();
+        assert_eq!(branches.len(), 1);
+        assert_eq!(branches[0].name, "translation/tr");
+        assert_eq!(branches[0].short_sha, "8cfc3211f8eb");
+        assert!(!branches[0].protected);
+        let malformed = br#"[{"name":"a","commit":{"sha":"BAD"},"protected":false}]"#;
+        assert!(parse_github_branches(malformed).is_err());
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             preview_status,
-            preview_verify_thor
+            preview_verify_thor,
+            preview_list_branches
         ])
         .run(tauri::generate_context!())
         .expect("Unable to open isolated BEAM GUI Preview window");

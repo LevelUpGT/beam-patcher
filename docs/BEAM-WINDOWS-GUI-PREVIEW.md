@@ -24,3 +24,14 @@ Başlatmada pencere gelmezse \`Microsoft Edge WebView2 Runtime\` kurulumu / anti
 \`thor_smoke.exe\` yalnızca komut satırı test aracıdır ve çift tıkla pencere açmaz. Bu proje gerçek bir **Tauri Windows desktop GUI** oluşturur. Şimdilik önizlemede OYNA/Güncelle özellikleri kapalıdır; gerçek istemciye bağlanacak tam launcher ilerideki ayrı doğrulama aşamasıdır.
 
 Kaynak: `beam-preview/public/index.html`, `beam-preview/src/main.rs`, `beam-preview/tauri.conf.json`. Bagimsiz crate; eski BEAM Tauri UI yuklenmez. İstemciler: 2015 Thor, yeni 2015 rPatchur, 2022 rPatchur kanalları mevcut halleriyle çalışmaya devam eder.
+
+
+## GitHub branch görünürlüğü (v0.2, yalnızca okuma)
+
+- İstemci profili: Eski 2015 / Yeni 2015 / 2022 Hybrid — yalnızca arayüz üzerinde görüntülenir, oyun klasörü veya patch geçmişi değiştirilmez.
+- Kaynak kod deposu: \`LevelUpGT/beam-patcher\` veya \`b1glord/ROenglishRE\`. Uygulama GitHub'ın herkese açık branches API'sini salt-okunur sorgular; en fazla 100 dal ve 12 saniye istek zaman aşımı.
+- Dal seçimi: branch adı, commit SHA ve korumalı dal bilgisi gösterilir. **Git checkout, branch içeriği indirme, yerel dosya değişimi, THOR uygulaması veya kanal değiştirme yapılmaz.**
+- \`LevelUpGT/RagnarokClient\` özel depodur; kişisel token depolanmadan/uygulamaya gömülmeden bu sürümde dallarını göstermez. İleride güvenli yetkili servis üzerinden sorgulanabilir.
+- Branch isimleri kullanıcı girdisi olarak serbest GitHub URL'sine çevrilmez. Backend API yalnızca iki allowlist reposunu sorgular; erişim kimliği paylaşılmaz.
+- Asıl sürüm/branch ayrımı: İstemci profili = uyumlu oyun sürümü; Git branch = kaynak kodu/test dalı; Stable/Beta = paket dağıtım kanalı. Bunların her birinin kimliği ve yama geçmişi ileride ayrı saklanacaktır.
+- README ve grafik arayüzdeki başlık: bu özellik henüz **profil bazlı uygulama kurulum izni** vermez. SHA-256/signed manifest ve yedekli kurulum olmadan **Güncelle/OYNA kapalıdır**.
