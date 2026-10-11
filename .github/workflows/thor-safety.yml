@@ -1,8 +1,8 @@
 # File Path: /.github/workflows/thor-safety.yml
 # Purpose: Build and test THOR parsing/GRF safety patches before merge
 # Module: CI - GitHub Actions YAML
-# Version: 1.0.1
-# Description: Upstream has no Cargo.lock yet; resolve dependencies to exercise format and core tests
+# Version: 1.1.0
+# Description: Run Linux Rust CI and FURY-GAMES Windows regression for loose THOR patch writes
 # Dependency Layer: Tool
 
 name: THOR Safety Regression
@@ -44,4 +44,30 @@ jobs:
         run: cargo test -p beam-core --lib
       - name: Compile safe headless patching modules
         run: cargo check -p beam-core
+
+  test-thor-windows:
+    name: FURY Windows THOR installer smoke
+    runs-on:
+      - self-hosted
+      - Windows
+      - X64
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Verify local Rust toolchain
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+      - name: Test THOR header and client paths
+        shell: pwsh
+        run: |
+          cargo test -p beam-formats --lib
+          if ($LASTEXITCODE -ne 0) { throw "THOR parser tests failed" }
+      - name: Test staged Windows loose-file transactions
+        shell: pwsh
+        run: |
+          cargo test -p beam-core --lib
+          if ($LASTEXITCODE -ne 0) { throw "Windows THOR installer tests failed" }
 
