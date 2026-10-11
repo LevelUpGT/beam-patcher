@@ -1,8 +1,8 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/tests/branch-ui.test.cjs
 // 📌 Amac: GUI branch listesi secimini ag baglantisi olmadan dogrulamak
 // 📌 Modul - JavaScript Test
-// Version: 0.2.1
-// Aciklama: Ortak SHA branch secimi, gecersiz eski yanit ve hata testleri
+// Version: 0.2.2
+// Aciklama: Varsayilan ve gelismis gorunumu, eski yanitlari ve branch kimligini dogrula
 // Bagimli Oldugu Katman: Tool | View | Language
 
 "use strict";
@@ -27,6 +27,7 @@ class FakeElement {
     this.className = "";
     this.disabled = false;
     this._value = "";
+    this.checked = false;
   }
   get value() {
     return this.options[this.selectedIndex]?.value ?? this._value;
@@ -58,7 +59,7 @@ class FakeElement {
 
 function boot(invoke) {
   const ids = ["result", "test", "details", "quit", "clientProfile", "sourceProject",
-    "branchList", "branchSha", "branchNote", "loadBranches"];
+    "branchList", "branchSha", "branchNote", "loadBranches", "showAllBranches"];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
   elements.sourceProject.value = "translation";
   elements.clientProfile.options = [{ value: "hybrid-2022", text: "2022 Hybrid" }];
@@ -120,6 +121,43 @@ test("a late error must not overwrite the source-switch message", async () => {
   rejectRequest(new Error("private request failure"));
   await pending;
   assert.match(elements.branchNote.textContent, /güvenli yetkilendirme/);
+});
+
+
+test("standard branch mode is concise and advanced mode requests all branches", async () => {
+  const calls = [];
+  const response = async (command, params) => {
+    assert.equal(command, "preview_list_branches");
+    calls.push(params);
+    const master = { name: "master", sha: SHA, short_sha: SHA.slice(0, 12), protected: false };
+    const legacy = { name: "release/old-test", sha: SHA, short_sha: SHA.slice(0, 12), protected: false };
+    return params.includeAll ? [master, legacy] : [master];
+  };
+  const { elements, fire } = boot(response);
+  await fire("loadBranches", "click");
+  assert.equal(calls[0].includeAll, false);
+  assert.equal(elements.branchList.options.length, 1);
+  elements.showAllBranches.checked = true;
+  fire("showAllBranches", "change");
+  assert.equal(elements.branchList.options[0].value, "");
+  await fire("loadBranches", "click");
+  assert.equal(calls[1].includeAll, true);
+  assert.deepEqual(elements.branchList.options.map((option) => option.value),
+    ["master", "release/old-test"]);
+});
+
+test("switching advanced mode invalidates a pending old-mode response", async () => {
+  let resolveRequest;
+  const { elements, fire } = boot(() => new Promise((resolve) => {
+    resolveRequest = resolve;
+  }));
+  const pending = fire("loadBranches", "click");
+  elements.showAllBranches.checked = true;
+  fire("showAllBranches", "change");
+  resolveRequest([{ name: "master", sha: SHA, short_sha: SHA.slice(0, 12), protected: false }]);
+  await pending;
+  assert.equal(elements.branchList.options[0].value, "");
+  assert.match(elements.branchNote.textContent, /Gelişmiş görünüm seçildi/);
 });
 
 test("API failures are reported for the currently selected public source", async () => {
