@@ -3,8 +3,8 @@
 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/public/index.html
 📌 Amac: BEAM onizleme istemci profili ve salt okunur branch secim arayuzu
 📌 Modul - HTML
-Version: 0.2.2
-Aciklama: Normal dal gorunumunu sade tut, arsiv ve test dallarini istege bagli goster
+Version: 0.3.0
+Aciklama: Salt okunur JSON manifest on-kontrolu ve imzasiz paketler icin blokaj
 Bagimli Oldugu Katman: View
 -->
 <html lang="tr">
@@ -102,6 +102,12 @@ Bagimli Oldugu Katman: View
       <div class="branchOptions"><label for="showAllBranches"><input type="checkbox" id="showAllBranches"> Tüm dalları göster (eski test, sürüm ve arşiv dalları)</label></div>
       <div class="branchNote" id="branchNote" role="status" aria-live="polite">Branch listesi çevrimiçi okunur; özel depolar için kimlik doğrulaması ayrıca gerekir.</div>
     </div>
+    <div class="branchCard">
+      <h3>Manifest on-kontrolu <span style="color:#86b5e6;font-size:12px;font-weight:400">· metadata / imza dogrulanmadi</span></h3>
+      <p class="branchHelp">Secili istemci profili ve GitHub dalinin commit kimligi ile yerel bir JSON manifest taslagini karsilastirir. Paket indirimi, imza kontrolu ve oyun kurulumu yapmaz.</p>
+      <button id="checkManifest" type="button">Yerel manifest taslagi sec ve incele</button>
+      <div class="branchNote" id="manifestNote" role="status" aria-live="polite">Manifest incelenmedi. Gunceleme yetkisi: KAPALI.</div>
+    </div>
     <div class="actions">
       <button id="test" class="primary" type="button">THOR Dosyası Seç ve Test Et</button>
       <button id="details" type="button">Sürüm Bilgisi</button>
@@ -128,9 +134,16 @@ Bagimli Oldugu Katman: View
   const branchInfo=document.getElementById("branchSha");
   const branchMessage=document.getElementById("branchNote");
   const loadBranches=document.getElementById("loadBranches");
+  const checkManifest=document.getElementById("checkManifest");
+  const manifestNote=document.getElementById("manifestNote");
   const showAllBranches=document.getElementById("showAllBranches");
   let visibleBranches=[];
   let branchRequestVersion=0;
+  let manifestSelectionVersion=0;
+  const invalidateManifest=()=>{
+    manifestSelectionVersion+=1;
+    manifestNote.textContent="Secim degisti. Manifest yeniden incelenmeli; kurulum kapali.";
+  };
   // This is a READ-ONLY branch inspector. No updates, downloads or disk writes.
   const resetBranches=()=>{
     visibleBranches=[];
@@ -138,10 +151,12 @@ Bagimli Oldugu Katman: View
     branchInfo.textContent="";
   };
   profileInput.addEventListener("change", ()=>{
+    invalidateManifest();
     branchMessage.textContent="İstemci profili seçildi: "+profileInput.options[profileInput.selectedIndex].text+
       ". Gerçek güncelleme sistemi değiştirilmedi.";
   });
   projectInput.addEventListener("change",()=>{
+    invalidateManifest();
     branchRequestVersion+=1;
     resetBranches();
     branchMessage.textContent=projectInput.value==="client"
@@ -149,6 +164,7 @@ Bagimli Oldugu Katman: View
       : "Yeni kaynak deposu seçildi; dalları tekrar yükle.";
   });
   showAllBranches.addEventListener("change",()=>{
+    invalidateManifest();
     branchRequestVersion+=1;
     resetBranches();
     branchMessage.textContent=showAllBranches.checked
@@ -156,6 +172,7 @@ Bagimli Oldugu Katman: View
       : "Standart görünüm seçildi. Aktif dalları görmek için GitHub dallarını getir.";
   });
   branchInput.addEventListener("change",()=>{
+    invalidateManifest();
     const selected=visibleBranches.find(b=>b.name===branchInput.value);
     branchInfo.textContent=selected
       ? "Seçili dal: "+selected.name+" · commit "+selected.sha+
@@ -171,6 +188,7 @@ Bagimli Oldugu Katman: View
     const project=projectInput.value;
     const includeAll=showAllBranches.checked;
     const requestVersion=++branchRequestVersion;
+    invalidateManifest();
     resetBranches();
     loadBranches.disabled=true;
     branchMessage.textContent="GitHub branch listesi okunuyor...";
@@ -197,6 +215,37 @@ Bagimli Oldugu Katman: View
       }
     }
     finally{loadBranches.disabled=false;}
+  });
+
+
+  checkManifest.addEventListener("click",async ()=>{
+    if(!tauri || !tauri.dialog || !invoke){
+      manifestNote.textContent="Manifest on-kontrolu sadece BEAM Windows uygulamasinda calisir.";
+      return;
+    }
+    const selected=visibleBranches.find(b=>b.name===branchInput.value);
+    if(!selected){
+      manifestNote.textContent="Once GitHub deposunu ve bir branch sec. Kurulum kapali.";
+      return;
+    }
+    const profile=profileInput.value;
+    const project=projectInput.value;
+    const branch=selected.name;
+    const sha=selected.sha;
+    const version=++manifestSelectionVersion;
+    try {
+      const path=await tauri.dialog.open({multiple:false,filters:[{name:"JSON Manifest Taslagi",extensions:["json"]}]});
+      if(!path || typeof path!=="string" || version!==manifestSelectionVersion)return;
+      checkManifest.disabled=true;
+      manifestNote.textContent="Manifest metadata alani inceleniyor... Imza ve paket icerigi kontrol edilmiyor.";
+      const report=await invoke("preview_check_manifest",{path,profile,project,branch,sha});
+      if(version!==manifestSelectionVersion)return;
+      manifestNote.textContent=report.metadata_matches
+        ? "Metadata eslesti ("+report.profile+" / "+report.engine+" / "+report.channel+"). IMZA ve PAKET DOGRULANMADI. Kurulum izni: KAPALI."
+        : "Manifest on-kontrolu eslesmedi. Kurulum izni: KAPALI.";
+    }catch(e){
+      if(version===manifestSelectionVersion)manifestNote.textContent="Manifest reddedildi: "+String(e)+". Kurulum kapali.";
+    }finally{checkManifest.disabled=false;}
   });
 
   document.getElementById("details").addEventListener("click", async () => {

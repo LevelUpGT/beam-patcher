@@ -1,20 +1,23 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/src/main.rs
 // 📌 Amac: BEAM Windows GUI onizleme controller komutlari ve guvenli branch sorgulari
 // 📌 Modul - Rust
-// Version: 0.2.2
-// Aciklama: Branch liste gorunumunu merkezi politika ile filtrele, guvenlik kontrollerini koru
+// Version: 0.3.0
+// Aciklama: Salt okunur profil ve manifest taslagi on-kontrolune izin ver, kurulum kapali
 // Bagimli Oldugu Katman: Controller | Service | Tool | View | Language
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod config {
     pub mod branch_visibility;
+    pub mod client_profiles;
 }
 mod services {
     pub mod branch_filter;
+    pub mod manifest_preflight;
 }
 
 use serde::Serialize;
 use std::path::Path;
+use std::io::Read;
 use std::collections::HashSet;
 
 const MAX_BRANCH_RESPONSE_BYTES: usize = 256 * 1024;
@@ -167,6 +170,41 @@ async fn preview_list_branches(project: String, include_all: bool) -> Result<Vec
     ))
 }
 
+#[tauri::command]
+async fn preview_check_manifest(
+    path: String,
+    profile: String,
+    project: String,
+    branch: String,
+    sha: String,
+) -> Result<services::manifest_preflight::ManifestPreflightReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let file_path = Path::new(&path);
+        if file_path.extension().and_then(|v| v.to_str())
+            .map(|ext| !ext.eq_ignore_ascii_case("json")).unwrap_or(true)
+        {
+            return Err("Yalnizca yerel .json manifest taslaklari acilabilir.".to_string());
+        }
+        let metadata = std::fs::symlink_metadata(file_path)
+            .map_err(|_| "Manifest dosyasi okunamadi.".to_string())?;
+        if !metadata.is_file() || metadata.file_type().is_symlink()
+            || metadata.len() == 0
+            || metadata.len() > config::client_profiles::MAX_MANIFEST_BYTES as u64
+        {
+            return Err("Manifest dosya tipi veya boyutu gecersiz.".to_string());
+        }
+        let file = std::fs::File::open(file_path)
+            .map_err(|_| "Manifest dosyasi acilamadi.".to_string())?;
+        let mut input = Vec::new();
+        file.take((config::client_profiles::MAX_MANIFEST_BYTES + 1) as u64)
+            .read_to_end(&mut input)
+            .map_err(|_| "Manifest dosyasi okunamadi.".to_string())?;
+        services::manifest_preflight::check(&input, &profile, &project, &branch, &sha)
+    })
+    .await
+    .map_err(|_| "Manifest kontrol islemi tamamlanamadi.".to_string())?
+}
+
 #[cfg(test)]
 mod branch_profiles_tests {
     use super::*;
@@ -236,7 +274,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             preview_status,
             preview_verify_thor,
-            preview_list_branches
+            preview_list_branches,
+            preview_check_manifest
         ])
         .run(tauri::generate_context!())
         .expect("Unable to open isolated BEAM GUI Preview window");

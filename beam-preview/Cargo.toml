@@ -1,6 +1,12 @@
+# 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/Cargo.toml
+# 📌 Amac: BEAM GUI paket bagimliliklarini ve calistirilabilir hedefini tanimlamak
+# 📌 Modul - TOML
+# Version: 0.3.0
+# Aciklama: Manifest metadata on-kontrolu icin yerel service katmani
+# Bagimli Oldugu Katman: Controller | Service | Tool
 [package]
 name = "beam-preview"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 description = "Safe graphical preview of BEAM THOR patcher, no game install"

@@ -1,7 +1,7 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/tests/branch-ui.test.cjs
 // 📌 Amac: GUI branch listesi secimini ag baglantisi olmadan dogrulamak
 // 📌 Modul - JavaScript Test
-// Version: 0.2.2
+// Version: 0.3.0
 // Aciklama: Varsayilan ve gelismis gorunumu, eski yanitlari ve branch kimligini dogrula
 // Bagimli Oldugu Katman: Tool | View | Language
 
@@ -59,7 +59,7 @@ class FakeElement {
 
 function boot(invoke) {
   const ids = ["result", "test", "details", "quit", "clientProfile", "sourceProject",
-    "branchList", "branchSha", "branchNote", "loadBranches", "showAllBranches"];
+    "branchList", "branchSha", "branchNote", "loadBranches", "showAllBranches", "checkManifest", "manifestNote"];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
   elements.sourceProject.value = "translation";
   elements.clientProfile.options = [{ value: "hybrid-2022", text: "2022 Hybrid" }];

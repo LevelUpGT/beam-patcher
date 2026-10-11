@@ -1,3 +1,11 @@
+<!--
+📄 Dosya Yolu: /LevelUpGT/beam-patcher/docs/BEAM-WINDOWS-GUI-PREVIEW.md
+📌 Amac: BEAM Windows onizleme paketinin guvenli yerel test talimati
+📌 Modul - Markdown
+Version: 0.3.0
+Aciklama: Profil-eslesme ve manifest taslagi testinin sinirlarini aciklar
+Bagimli Oldugu Katman: View | Language
+-->
 # BEAM Patcher — Windows GUI Preview
 
 **Bu paket bir grafik penceresi açar.** Önceki \`thor_smoke.exe\` gibi konsol aracı değildir.
@@ -35,3 +43,22 @@ Kaynak: `beam-preview/public/index.html`, `beam-preview/src/main.rs`, `beam-prev
 - Branch isimleri kullanıcı girdisi olarak serbest GitHub URL'sine çevrilmez. Backend API yalnızca iki allowlist reposunu sorgular; erişim kimliği paylaşılmaz.
 - Asıl sürüm/branch ayrımı: İstemci profili = uyumlu oyun sürümü; Git branch = kaynak kodu/test dalı; Stable/Beta = paket dağıtım kanalı. Bunların her birinin kimliği ve yama geçmişi ileride ayrı saklanacaktır.
 - README ve grafik arayüzdeki başlık: bu özellik henüz **profil bazlı uygulama kurulum izni** vermez. SHA-256/signed manifest ve yedekli kurulum olmadan **Güncelle/OYNA kapalıdır**.
+
+
+## Manifest taslagi on-kontrolu (v0.3, salt okunur)
+
+1. Istemci profilini ve GitHub kaynak deposunu sec; ilgili dallari getir ve bir branch sec.
+2. **Yerel manifest taslagi sec ve incele** ile kendi hazirladigin JSON dosyasini ac. Oyun klasorune kurulmasi gerekmez.
+3. Yalnizca manifest metadata alanlarinin secili **profil, kaynak depo, branch ve tam commit SHA** ile eslestigi kontrol edilir.
+4. Eslesse dahi durum `PREVIEW_ONLY_UNSIGNED` kalir; gercek paket dosyasi okunmaz/indirilmez, hash hesaplanmaz, dijital imza kontrol edilmez, **Guncelle / OYNA kapali** kalir.
+5. Manifest degistirildiginde veya secim degistirildiginde onceki sonuc tekrar kullanilmaz.
+
+Taslak sema: `levelupgt.beam.manifest-preview.v1`. JSON alanlari:
+`schema`, `profile`, `project`, `repository`, `branch`, `commit_sha`, `engine`, `channel`, `package_sha256`, `package_size`.
+
+Profil-motor sozlesmesi:
+- `old-2015` -> `legacy-thor`
+- `new-2015` -> `rpatchur`
+- `hybrid-2022` -> `rpatchur`
+
+`package_sha256` burada **yalnizca beyan edilen 64 karakterlik bir alan** olarak denetlenir; indirilen paket byte'lariyla karsilastirilmaz. Bu taslak hicbir sekilde imzali/saglam bir guncelleme manifesti degildir. Ozel `LevelUpGT/RagnarokClient` deposu, yetkili servis olmadan bu on-kontrole kabul edilmez. Gercek imzali manifest semasi, guven zinciri, key rotation, SHA-256 paket karsilastirmasi ve transaction rollback sonradan ayri guvenlik adimi olarak tasarlanmalidir.

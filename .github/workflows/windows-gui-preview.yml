@@ -1,8 +1,8 @@
 # 📄 Dosya Yolu: /LevelUpGT/beam-patcher/.github/workflows/windows-gui-preview.yml
 # 📌 Amac: Windows BEAM GUI onizlemesini ve bagimli Rust kutuphanelerini test etmek
 # 📌 Modul - YAML
-# Version: 1.4.2
-# Aciklama: Bagimlilik testlerine ve GUI branch secim kontratina gore derleme yap
+# Version: 1.5.0
+# Aciklama: Manifest metadata preflight ve branch secim testleriyle GUI'yi derle
 # Bagimli Oldugu Katman: Tool
 name: Windows GUI Preview
 
