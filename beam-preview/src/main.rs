@@ -1,10 +1,17 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/src/main.rs
 // 📌 Amac: BEAM Windows GUI onizleme controller komutlari ve guvenli branch sorgulari
 // 📌 Modul - Rust
-// Version: 0.2.1
-// Aciklama: HTTPS cevap boyutunu sinirla, yonlendirmeleri reddet, branch yanitini dogrula
+// Version: 0.2.2
+// Aciklama: Branch liste gorunumunu merkezi politika ile filtrele, guvenlik kontrollerini koru
 // Bagimli Oldugu Katman: Controller | Service | Tool | View | Language
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod config {
+    pub mod branch_visibility;
+}
+mod services {
+    pub mod branch_filter;
+}
 
 use serde::Serialize;
 use std::path::Path;
@@ -88,12 +95,7 @@ struct GithubCommit {
 }
 
 fn public_branch_source(project: &str) -> Result<&'static str, &'static str> {
-    match project {
-        "beam" => Ok("LevelUpGT/beam-patcher"),
-        "translation" => Ok("b1glord/ROenglishRE"),
-        "client" => Err("RagnarokClient ozel bir repo. Token kullanmadan branch listesi alinamaz."),
-        _ => Err("Desteklenmeyen GitHub projesi."),
-    }
+    config::branch_visibility::public_branch_source(project)
 }
 
 fn parse_github_branches(bytes: &[u8]) -> Result<Vec<BranchSummary>, String> {
@@ -127,7 +129,7 @@ fn parse_github_branches(bytes: &[u8]) -> Result<Vec<BranchSummary>, String> {
 }
 
 #[tauri::command]
-async fn preview_list_branches(project: String) -> Result<Vec<BranchSummary>, String> {
+async fn preview_list_branches(project: String, include_all: bool) -> Result<Vec<BranchSummary>, String> {
     let repo = public_branch_source(&project).map_err(|message| message.to_string())?;
     // No credentials, user-entered URLs or redirect to a game-patch server.
     // The GitHub API response is used for display only.
@@ -158,7 +160,11 @@ async fn preview_list_branches(project: String) -> Result<Vec<BranchSummary>, St
         }
         bytes.extend_from_slice(&chunk);
     }
-    parse_github_branches(&bytes)
+    Ok(services::branch_filter::apply(
+        &project,
+        include_all,
+        parse_github_branches(&bytes)?,
+    ))
 }
 
 #[cfg(test)]
@@ -188,6 +194,28 @@ mod branch_profiles_tests {
         let sample = br#"[{"name":"master","commit":{"sha":"af2191234a22e180fac62d179489b64f3d17a997"}},{"name":"master","commit":{"sha":"af2191234a22e180fac62d179489b64f3d17a997"}}]"#;
         assert!(parse_github_branches(sample).is_err());
         assert!(parse_github_branches(&vec![b'x'; MAX_BRANCH_RESPONSE_BYTES + 1]).is_err());
+    }
+
+    #[test]
+    fn default_branch_filter_hides_legacy_but_advanced_lists_all() {
+        let sample = br#"[{"name":"translation/tr","commit":{"sha":"8cfc3211f8ebba2542fe6b6a114a33af0871367e"}},{"name":"master","commit":{"sha":"af2191234a22e180fac62d179489b64f3d17a997"}},{"name":"release/old-test","commit":{"sha":"8367640e3d9139415dca9e03083dc9b8ae60fd33"}},{"name":"upstream/latest","commit":{"sha":"85f216a230bf9180451fa29a37505baeb676c559"}}]"#;
+        let parsed = parse_github_branches(sample).unwrap();
+        let visible = services::branch_filter::apply(
+            config::branch_visibility::PROJECT_TRANSLATION, false,
+            parse_github_branches(sample).unwrap(),
+        );
+        assert_eq!(parsed.len(), 4);
+        assert_eq!(visible.len(), 3);
+        assert!(visible.iter().all(|b| b.name != "release/old-test"));
+        let all = services::branch_filter::apply(
+            config::branch_visibility::PROJECT_TRANSLATION, true, parsed,
+        );
+        assert_eq!(all.len(), 4);
+        let beam = services::branch_filter::apply(
+            config::branch_visibility::PROJECT_BEAM, false,
+            parse_github_branches(sample).unwrap(),
+        );
+        assert!(beam.is_empty());
     }
 
     #[test]
