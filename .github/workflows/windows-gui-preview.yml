@@ -1,7 +1,7 @@
 # File Path: /.github/workflows/windows-gui-preview.yml
 # Purpose: Build and smoke-check graphical BEAM desktop launcher on hosted Windows
 # Module: CI - Windows
-# Version: 1.1.0
+# Version: 1.2.0
 # Description: Compile actual Tauri window; test-only artifact, no live game install
 # Dependency Layer: Tool
 name: Windows GUI Preview
@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   build-windows-gui:
-    name: Windows native GUI build
+    name: Windows native GUI build and window-open smoke
     runs-on: windows-latest
     timeout-minutes: 45
     steps:
@@ -39,6 +39,34 @@ jobs:
         run: |
           cargo build --release --package beam-patcher --bin BEAM-Patcher-Preview
           if ($LASTEXITCODE -ne 0) { throw "BEAM Tauri desktop GUI build failed" }
+      - name: Smoke-test real GUI process and window
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path "target/release/BEAM-Patcher-Preview.exe").Path
+          $proc = Start-Process -FilePath "$exe" -PassThru
+          $windowAppeared = $false
+          try {
+            for ($attempt = 0; $attempt -lt 40; $attempt++) {
+              Start-Sleep -Seconds 1
+              $proc.Refresh()
+              if ($proc.HasExited) { throw "BEAM GUI exited before opening a window (code $($proc.ExitCode))" }
+              if ($proc.MainWindowHandle -ne 0) {
+                Write-Host "BEAM GUI has main window handle $($proc.MainWindowHandle); title: $($proc.MainWindowTitle)"
+                $windowAppeared = $true
+                break
+              }
+            }
+            if (-not $windowAppeared) {
+              throw "BEAM GUI did not expose a Windows desktop window in 40 seconds"
+            }
+          }
+          finally {
+            if (-not $proc.HasExited) {
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+            }
+          }
+
       - name: Validate compiled Windows PE
         shell: pwsh
         run: |
@@ -48,6 +76,7 @@ jobs:
           Write-Host "GUI_EXE_SHA256=$hash"
           New-Item -Force -ItemType Directory "gui-preview-package" | Out-Null
           Copy-Item $exe "gui-preview-package/"
+          Copy-Item "docs/BEAM-WINDOWS-GUI-PREVIEW.md" "gui-preview-package/README.md"
           Set-Content -Path "gui-preview-package/BEAM-Patcher-Preview.exe.sha256" -Value "$hash  BEAM-Patcher-Preview.exe" -Encoding ascii
       - name: Upload diagnostic GUI binary, no game assets
         uses: actions/upload-artifact@v4
