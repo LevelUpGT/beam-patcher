@@ -463,6 +463,114 @@ fn create_patch_temp_dir() -> Result<PathBuf> {
     ))
 }
 
+/// Offline, user-safe THOR acceptance check.
+/// NEVER targets a real Ragnarok directory. A fresh OS temporary directory
+/// is allocated by this function and removed when the test ends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThorSandboxReport {
+    pub verified_files: usize,
+    pub deleted_files: usize,
+    pub no_grf_written: bool,
+}
+
+struct ThorSandboxGuard(PathBuf);
+
+impl Drop for ThorSandboxGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Verify the actual BEAM client installer against a THOR without mutating
+/// anything outside a uniquely allocated, disposable OS-temp directory.
+pub fn smoke_test_loose_thor(patch_path: &Path) -> Result<ThorSandboxReport> {
+    use std::collections::BTreeMap;
+
+    let archive = Thor::open(patch_path)?;
+    if archive.use_grf_merging || archive.target_grf_name.is_some() {
+        return Err(Error::PatchFailed(
+            "Sandbox test accepts loose-client THOR only (GRF merging forbidden)".to_string()
+        ));
+    }
+    if archive.entries.is_empty() {
+        return Err(Error::PatchFailed("Empty THOR is not a valid smoke fixture".into()));
+    }
+
+    // Collect expected final state. The parser already validates paths and
+    // duplicate entries; this table also makes removal verification explicit.
+    let mut expected: BTreeMap<String, Option<Vec<u8>>> = BTreeMap::new();
+    for entry in archive.get_entries() {
+        match entry {
+            ThorEntry::Add { filename, data } => {
+                validate_client_path(filename)?;
+                expected.insert(filename.replace('\\', "/"), Some(data.clone()));
+            }
+            ThorEntry::Remove { filename } => {
+                validate_client_path(filename)?;
+                expected.insert(filename.replace('\\', "/"), None);
+            }
+        }
+    }
+
+    let sandbox = create_patch_temp_dir()?;
+    let _cleanup = ThorSandboxGuard(sandbox.clone());
+    // Test delete operations on an existing file, as well as new additions.
+    for (name, content) in &expected {
+        if content.is_none() {
+            let target = checked_client_destination(&sandbox, name)?;
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(target, b"dummy pre-existing file for THOR removal")?;
+        }
+    }
+
+    let _lock = try_lock_client_root(&sandbox)?;
+    apply_loose_thors(&sandbox, &[archive])?;
+    let mut added = 0usize;
+    let mut removed = 0usize;
+    for (name, content) in &expected {
+        let target = checked_client_destination(&sandbox, name)?;
+        match content {
+            Some(data) => {
+                if std::fs::read(&target)? != *data {
+                    return Err(Error::PatchFailed(format!(
+                        "Sandbox result differs from THOR: {name}"
+                    )));
+                }
+                added += 1;
+            }
+            None => {
+                if target.exists() {
+                    return Err(Error::PatchFailed(format!(
+                        "Sandbox THOR removal failed: {name}"
+                    )));
+                }
+                removed += 1;
+            }
+        }
+    }
+
+    // No GRF should ever appear in a loose-client patch smoke test.
+    let mut no_grf = true;
+    for item in std::fs::read_dir(&sandbox)? {
+        let entry = item?;
+        if entry.path().extension().and_then(|ext| ext.to_str()).is_some_and(|ext| ext.eq_ignore_ascii_case("grf")) {
+            no_grf = false;
+        }
+    }
+    if !no_grf {
+        return Err(Error::PatchFailed(
+            "Loose-client smoke test unexpectedly wrote a GRF".into()
+        ));
+    }
+    Ok(ThorSandboxReport {
+        verified_files: added,
+        deleted_files: removed,
+        no_grf_written: no_grf,
+    })
+}
+
 pub struct Patcher {
     config: Config,
     downloader: Downloader,
