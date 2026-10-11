@@ -1,6 +1,6 @@
 use crate::{Config, Downloader, Error, Result};
 use crate::downloader::PatchInfo;
-use beam_formats::{grf::Grf, gpf::Gpf, rgz::Rgz, thor::Thor, beam::BeamArchive};
+use beam_formats::{grf::Grf, gpf::Gpf, rgz::Rgz, thor::{Thor, ThorEntry, validate_client_path}, beam::BeamArchive};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
@@ -24,6 +24,212 @@ fn validate_thor_destination(thor: &Thor, configured_grf: &str) -> Result<()> {
             )));
         }
     }
+    Ok(())
+}
+
+/// Remote filenames must not create arbitrary paths inside the shared temp folder.
+fn validate_patch_filename(name: &str) -> Result<()> {
+    validate_client_path(name)?;
+    if (name.contains('/') || name.contains('\\')) || name.len() > 255 {
+        return Err(Error::PatchFailed("Unsafe patch archive filename".to_string()));
+    }
+    let lower = name.to_ascii_lowercase();
+    if ![".thor", ".beam", ".gpf", ".rgz"]
+        .iter()
+        .any(|suffix| lower.ends_with(suffix))
+    {
+        return Err(Error::PatchFailed("Unknown patch extension".to_string()));
+    }
+    Ok(())
+}
+
+/// A target must be a regular file or absent; no symlinks, junctions, or
+/// non-directory ancestors, regardless of the OS running the patcher.
+fn checked_client_destination(root: &Path, name: &str) -> Result<PathBuf> {
+    validate_client_path(name)?;
+    let normalized = name.replace('\\', "/");
+    let segments: Vec<_> = normalized.split('/').collect();
+    let mut path = root.to_path_buf();
+    for (index, segment) in segments.iter().enumerate() {
+        path.push(segment);
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink()
+                    || (index + 1 == segments.len() && !metadata.is_file())
+                    || (index + 1 < segments.len() && !metadata.is_dir())
+                {
+                    return Err(Error::PatchFailed(format!(
+                        "Refusing symlink or non-file client path: {}", name
+                    )));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(path)
+}
+
+struct ClientChange {
+    destination: PathBuf,
+    staged: Option<PathBuf>,
+    backup: Option<PathBuf>,
+}
+
+/// All loose-client changes are staged and backed up on the same volume.
+/// On ordinary errors the installer attempts to restore every original file.
+/// A power cut may still interrupt this best-effort rollback; production use
+/// needs a persistent recovery journal (see Phase B acceptance documentation).
+fn apply_loose_thors(game_root: &Path, archives: &[Thor]) -> Result<()> {
+    use std::collections::BTreeMap;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let root = std::fs::canonicalize(game_root)?;
+    if !root.is_dir() {
+        return Err(Error::PatchFailed("Game root is not a directory".to_string()));
+    }
+
+    // Keys are Windows case-insensitive, even when validating on Linux.
+    let mut plan: BTreeMap<String, (PathBuf, Option<Vec<u8>>)> = BTreeMap::new();
+    let mut planned_bytes: usize = 0;
+    for archive in archives {
+        if archive.use_grf_merging || archive.target_grf_name.is_some() {
+            return Err(Error::PatchFailed(
+                "GRF archive cannot enter loose-file transaction".to_string()
+            ));
+        }
+        for entry in archive.get_entries() {
+            let (name, payload) = match entry {
+                ThorEntry::Add { filename, data } => (filename, Some(data.clone())),
+                ThorEntry::Remove { filename } => (filename, None),
+            };
+            let dest = checked_client_destination(&root, name)?;
+            let key = name.replace('\\', "/").to_lowercase();
+            if let Some((previous, _)) = plan.get(&key) {
+                if previous != &dest {
+                    return Err(Error::PatchFailed(format!(
+                        "Conflicting client path casing: {}", name
+                    )));
+                }
+            }
+            if let Some(ref bytes) = payload {
+                planned_bytes = planned_bytes.checked_add(bytes.len())
+                    .ok_or_else(|| Error::PatchFailed("Patch payload size overflow".to_string()))?;
+                if planned_bytes > 512 * 1024 * 1024 {
+                    return Err(Error::PatchFailed(
+                        "Loose THOR batch exceeds 512 MiB safety budget".to_string()
+                    ));
+                }
+            }
+            plan.insert(key, (dest, payload));
+        }
+    }
+    if plan.is_empty() {
+        return Ok(());
+    }
+
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)
+        .map_err(|e| Error::PatchFailed(e.to_string()))?.as_nanos();
+    let staging_root = root.join(format!(
+        ".beam-patch-txn-{}-{timestamp}", std::process::id()
+    ));
+    std::fs::create_dir(&staging_root)?;
+
+    let prepared: Result<Vec<ClientChange>> = (|| {
+        let mut changes = Vec::with_capacity(plan.len());
+        for (index, (_, (dest, contents))) in plan.iter().enumerate() {
+            // Re-check before touching any destination; reject pre-existing
+            // symlinks rather than following them during copy/restore.
+            let relative = dest.strip_prefix(&root)
+                .map_err(|_| Error::PatchFailed("Destination escaped game root".to_string()))?;
+            let relative_name = relative.to_string_lossy().replace('\\', "/");
+            checked_client_destination(&root, &relative_name)?;
+
+            let backup = if dest.exists() {
+                let path = staging_root.join(format!("backup-{index}"));
+                std::fs::copy(dest, &path)?;
+                Some(path)
+            } else {
+                None
+            };
+            let staged = if let Some(bytes) = contents {
+                let path = staging_root.join(format!("new-{index}"));
+                std::fs::write(&path, bytes)?;
+                Some(path)
+            } else {
+                None
+            };
+            changes.push(ClientChange {
+                destination: dest.clone(), backup, staged
+            });
+        }
+        Ok(changes)
+    })();
+
+    let changes = match prepared {
+        Ok(changes) => changes,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&staging_root);
+            return Err(error);
+        }
+    };
+    let mut touched = Vec::new();
+    let mut failure = None;
+    for (idx, item) in changes.iter().enumerate() {
+        let attempt: Result<()> = (|| {
+            let relative = item.destination.strip_prefix(&root)
+                .map_err(|_| Error::PatchFailed("Destination escaped root".to_string()))?;
+            checked_client_destination(&root, &relative.to_string_lossy())?;
+            if let Some(parent) = item.destination.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            // Include the current entry before any operation so rollback can
+            // recover it if removing/replacing the destination fails midway.
+            touched.push(idx);
+            if item.destination.exists() {
+                std::fs::remove_file(&item.destination)?;
+            }
+            if let Some(ref staged) = item.staged {
+                std::fs::rename(staged, &item.destination)?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = attempt {
+            failure = Some(error);
+            break;
+        }
+    }
+
+    if let Some(error) = failure {
+        let mut rollback_error = None;
+        for idx in touched.into_iter().rev() {
+            let change = &changes[idx];
+            let restore: Result<()> = (|| {
+                if change.destination.exists() {
+                    std::fs::remove_file(&change.destination)?;
+                }
+                if let Some(ref backup) = change.backup {
+                    std::fs::copy(backup, &change.destination)?;
+                }
+                Ok(())
+            })();
+            if let Err(e) = restore {
+                rollback_error = Some(e);
+            }
+        }
+        if let Some(rollback_failure) = rollback_error {
+            return Err(Error::PatchFailed(format!(
+                "{error}; rollback also failed: {rollback_failure}. \
+                 Preserve recovery backups in {}",
+                staging_root.display()
+            )));
+        }
+        let _ = std::fs::remove_dir_all(&staging_root);
+        return Err(error);
+    }
+
+    // Successful commit; original bytes remain in backup until this point.
+    let _ = std::fs::remove_dir_all(staging_root);
     Ok(())
 }
 
@@ -77,6 +283,7 @@ impl Patcher {
     where
         F: FnMut(u64, u64) + Send + 'static,
     {
+        validate_patch_filename(&patch.filename)?;
         let patch_path = self.temp_dir.join(&patch.filename);
 
         self.downloader
@@ -101,10 +308,9 @@ impl Patcher {
         Ok(())
     }
 
-    /// Batched version of the patch flow:
-    /// downloads each patch, queues changes into a single in-memory GRF,
-    /// and saves the GRF exactly once at the end. Saves O(N) full-GRF rewrites
-    /// down to one. `progress` is called with `(patch_index, patch_total, downloaded, total_bytes)`.
+    /// Downloads/verifies everything before writing. GRF patches stay batched;
+    /// loose-client THOR packages form one recoverable file transaction.
+    /// Mixed GRF/loose batches are rejected pending tested ordering semantics.
     pub async fn download_and_apply_patches<F>(
         &self,
         patches: &[PatchInfo],
@@ -117,31 +323,25 @@ impl Patcher {
             return Ok(());
         }
 
-        let grf_path = self.get_grf_path()?;
-        let mut grf = self.open_or_create_grf(&grf_path)?;
         let total = patches.len();
-
-        // Wrap the user-supplied progress callback so each download can take its
-        // own per-chunk closure that's `'static + Send` (which the downloader API
-        // requires). Real per-chunk progress is restored this way.
         let progress = Arc::new(Mutex::new(progress));
+        let mut staged = Vec::with_capacity(total);
+        let mut loose_thors = Vec::new();
+        let mut has_grf_patch = false;
 
-        // Don't write to applied_patches.txt yet — defer until grf.save() succeeds
-        // so a save failure can't leave the cache lying about what's on disk.
-        let mut staged: Vec<String> = Vec::with_capacity(patches.len());
-
+        // Preflight archives and checksums without writing any game file.
         for (idx, patch) in patches.iter().enumerate() {
-            info!("Processing patch {}/{}: {}", idx + 1, total, patch.filename);
+            info!("Preflighting patch {}/{}: {}", idx + 1, total, patch.filename);
+            validate_patch_filename(&patch.filename)?;
             let patch_path = self.temp_dir.join(&patch.filename);
-
             let progress_for_dl = Arc::clone(&progress);
             self.downloader
                 .download_file_with_progress(
                     &patch.filename,
                     &patch_path,
-                    move |downloaded, t| {
-                        if let Ok(mut cb) = progress_for_dl.lock() {
-                            (*cb)(idx, total, downloaded, t);
+                    move |downloaded, total_bytes| {
+                        if let Ok(mut callback) = progress_for_dl.lock() {
+                            (*callback)(idx, total, downloaded, total_bytes);
                         }
                     },
                 )
@@ -150,25 +350,58 @@ impl Patcher {
             if let Some(checksum) = &patch.checksum {
                 if !self.downloader.verify_checksum(&patch_path, checksum).await? {
                     return Err(Error::PatchFailed(format!(
-                        "Checksum mismatch for {}",
-                        patch.filename
+                        "Checksum mismatch for {}", patch.filename
                     )));
                 }
             }
 
-            self.apply_patch_into_grf(&patch_path, &mut grf).await?;
-            staged.push(patch.filename.clone());
-            let _ = tokio::fs::remove_file(&patch_path).await;
+            let is_thor = patch_path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("thor"));
+            if is_thor {
+                let archive = Thor::open(&patch_path)?;
+                if archive.use_grf_merging {
+                    has_grf_patch = true;
+                    validate_thor_destination(&archive, &self.config.patcher.target_grf)?;
+                } else {
+                    if archive.target_grf_name.is_some() {
+                        return Err(Error::PatchFailed(
+                            "Loose THOR cannot name a GRF destination".to_string()
+                        ));
+                    }
+                    loose_thors.push(archive);
+                }
+            } else {
+                has_grf_patch = true;
+            }
+            staged.push((patch.filename.clone(), patch_path));
         }
 
-        info!("Flushing {} batched patches to GRF: {:?}", staged.len(), grf_path);
-        grf.save()?;
-
-        // GRF persisted — now it's safe to record what's applied.
-        for fname in &staged {
-            self.downloader.mark_patch_applied(fname)?;
+        if has_grf_patch && !loose_thors.is_empty() {
+            return Err(Error::PatchFailed(
+                "Mixed GRF and loose-client patches must be published in separate \
+                 ordered feeds until BEAM's mixed-mode transaction gate is tested."
+                    .to_string(),
+            ));
         }
 
+        if has_grf_patch {
+            let grf_path = self.get_grf_path()?;
+            let mut grf = self.open_or_create_grf(&grf_path)?;
+            for (_, path) in &staged {
+                self.apply_patch_into_grf(path, &mut grf).await?;
+            }
+            grf.save()?;
+        } else if !loose_thors.is_empty() {
+            let root = self.get_game_root()?;
+            apply_loose_thors(&root, &loose_thors)?;
+        }
+
+        // Record progress only after the entire batch has been persisted.
+        for (name, path) in &staged {
+            self.downloader.mark_patch_applied(name)?;
+            let _ = tokio::fs::remove_file(path).await;
+        }
         Ok(())
     }
 
@@ -188,6 +421,21 @@ impl Patcher {
 
     /// One-shot apply: opens its own GRF, applies, saves.
     pub async fn apply_patch(&self, patch_path: &Path) -> Result<()> {
+        if patch_path.extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("thor"))
+        {
+            let archive = Thor::open(patch_path)?;
+            if !archive.use_grf_merging {
+                if archive.target_grf_name.is_some() {
+                    return Err(Error::PatchFailed(
+                        "Loose THOR cannot name a GRF destination".to_string()
+                    ));
+                }
+                return apply_loose_thors(&self.get_game_root()?, &[archive]);
+            }
+            validate_thor_destination(&archive, &self.config.patcher.target_grf)?;
+        }
         let grf_path = self.get_grf_path()?;
         let mut grf = self.open_or_create_grf(&grf_path)?;
         self.apply_patch_into_grf(patch_path, &mut grf).await?;
@@ -303,6 +551,13 @@ impl Patcher {
         self.apply_patch(patch_path).await
     }
 
+    fn get_game_root(&self) -> Result<PathBuf> {
+        match &self.config.app.game_directory {
+            Some(path) => Ok(std::fs::canonicalize(path)?),
+            None => Ok(std::fs::canonicalize(crate::get_executable_dir()?)?),
+        }
+    }
+
     fn get_grf_path(&self) -> Result<PathBuf> {
         let grf_filename = &self.config.patcher.target_grf;
 
@@ -329,6 +584,86 @@ impl Patcher {
 #[cfg(test)]
 mod thor_guards_tests {
     use super::*;
+
+    #[test]
+    fn applies_loose_client_thor_without_creating_grf() {
+        let root = std::env::temp_dir().join(format!(
+            "beam-loose-test-{}-{}", std::process::id(), 703
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        std::fs::write(root.join("data/removed.txt"), b"remove-me").unwrap();
+
+        let mut patch = Thor::new();
+        patch.add_file("SystemEN/LuaFiles514/itemInfo.lua", b"translated");
+        patch.add_file("data/new.txt", b"new-data");
+        patch.remove_file("data/removed.txt");
+        apply_loose_thors(&root, &[patch]).unwrap();
+        assert_eq!(
+            std::fs::read(root.join("SystemEN/LuaFiles514/itemInfo.lua")).unwrap(),
+            b"translated"
+        );
+        assert_eq!(std::fs::read(root.join("data/new.txt")).unwrap(), b"new-data");
+        assert!(!root.join("data/removed.txt").exists());
+        assert!(!root.join("ragnardata.grf").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refuses_unsafe_path_before_modifying_client() {
+        let root = std::env::temp_dir().join(format!(
+            "beam-loose-unsafe-{}-{}", std::process::id(), 704
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("keep.txt"), b"original").unwrap();
+        let mut patch = Thor::new();
+        patch.add_file("keep.txt", b"changed");
+        patch.add_file("../escape.txt", b"unexpected");
+        assert!(apply_loose_thors(&root, &[patch]).is_err());
+        assert_eq!(std::fs::read(root.join("keep.txt")).unwrap(), b"original");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn later_loose_thor_wins_in_correct_patch_order() {
+        let root = std::env::temp_dir().join(format!(
+            "beam-loose-order-{}-{}", std::process::id(), 705
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let mut first = Thor::new();
+        first.add_file("SystemEN/names.txt", b"2015");
+        let mut second = Thor::new();
+        second.add_file("SystemEN/names.txt", b"2022");
+        apply_loose_thors(&root, &[first, second]).unwrap();
+        assert_eq!(std::fs::read(root.join("SystemEN/names.txt")).unwrap(), b"2022");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refuses_symlinked_client_ancestor() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!(
+            "beam-loose-link-{}-{}", std::process::id(), 706
+        ));
+        let external = std::env::temp_dir().join(format!(
+            "beam-loose-outside-{}-{}", std::process::id(), 706
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let _ = std::fs::remove_dir_all(&external);
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        symlink(&external, root.join("SystemEN")).unwrap();
+        let mut archive = Thor::new();
+        archive.add_file("SystemEN/evil.lua", b"surprise");
+        assert!(apply_loose_thors(&root, &[archive]).is_err());
+        assert!(!external.join("evil.lua").exists());
+        std::fs::remove_dir_all(root).unwrap();
+        std::fs::remove_dir_all(external).unwrap();
+    }
+
 
     #[test]
     fn rejects_loose_client_thor_before_grf_write() {
