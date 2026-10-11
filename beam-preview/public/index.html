@@ -3,8 +3,8 @@
 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/public/index.html
 📌 Amac: BEAM onizleme istemci profili ve salt okunur branch secim arayuzu
 📌 Modul - HTML
-Version: 0.4.0
-Aciklama: Imzali manifest taslagi butonu ve guvenilir anahtar yoksa kapali mod
+Version: 0.5.0
+Aciklama: Yalnizca gelistiriciye ozel deney plani, durumlar NOT_RUN ve dagitim kapali
 Bagimli Oldugu Katman: View
 -->
 <html lang="tr">
@@ -49,21 +49,22 @@ Bagimli Oldugu Katman: View
     .branchOptions{margin:11px 0 0;color:#b7c8dd;font-size:12px}
     .branchOptions label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
     .branchOptions input{accent-color:#2680d3}
+    .labReport{max-height:280px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#080f1b;border:1px solid #344a65;border-radius:8px;padding:12px;font:12px Consolas,monospace;line-height:1.45;color:#c3dbf5}
     @media(max-width:760px){.branchGrid{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
 <main class="wrap">
   <div class="head">
-    <div><div class="brand">LEVELUP<strong>GT</strong> <span style="font-weight:400;opacity:.7">/ BEAM</span></div><div class="sub">Ragnarok Online Patcher</div></div>
-    <div class="pill"><span class="dot"></span>ÖNİZLEME · GÜVENLİ MOD</div>
+    <div><div class="brand">LEVELUP<strong>GT</strong> <span style="font-weight:400;opacity:.7">/ BEAM</span></div><div class="sub">Ragnarok Patcher · Deney Laboratuvari</div></div>
+    <div class="pill"><span class="dot"></span>GELİŞTİRİCİ · DENEYSEL · DAĞITILMAZ</div>
   </div>
   <div class="mainline hero">
-    <section><div class="eyebrow">BEAM DESKTOP · WINDOWS TEST SÜRÜMÜ</div><h1>Oyun dünyana<br><span style="color:#8cc9ff">hazır ol.</span></h1><p>Bu gerçek bir Windows grafik arayüzü önizlemesidir. THOR paketlerini geçici test alanında doğrulayabilirsin. Oyun dosyaları, GRF ve güncelleme geçmişi değiştirilmez.</p></section>
+    <section><div class="eyebrow">BEAM LAB · GELİŞTİRİCİ ÖNİZLEMESİ</div><h1>Yama altyapısını<br><span style="color:#8cc9ff">güvenle dene.</span></h1><p>Yalnızca dahili geliştirme laboratuvarı. THOR sandbox, GitHub dal karşılaştırmaları ve manifest kontrolleri için kullanılır; oyunculara dağıtılmaz. Oyun dosyalarına dokunulmaz.</p></section>
     <div class="headArt"><div class="orb">B.</div></div>
   </div>
   <section class="panel">
-    <div class="mini"><h2>Güncelleme merkezi</h2><span class="pill">Test kanalı · v0.1.0</span></div>
+    <div class="mini"><h2>Deney laboratuvarı</h2><span class="pill">Laboratuvar · v0.5.0</span></div>
     <div class="metrics">
       <div class="stat"><b>2015 Eski</b><small>Thor Patcher korunuyor</small></div>
       <div class="stat"><b>2015 Yeni</b><small>rPatchur, BEAM test adayı</small></div>
@@ -109,6 +110,12 @@ Bagimli Oldugu Katman: View
       <button id="checkSignedManifest" type="button">Imzali manifest kontrolu (test)</button>
       <div class="branchNote" id="manifestNote" role="status" aria-live="polite">Manifest incelenmedi. Gunceleme yetkisi: KAPALI.</div>
     </div>
+    <div class="branchCard">
+      <h3>Deney plani <span style="color:#86b5e6;font-size:12px;font-weight:400">· salt-okunur / JSON</span></h3>
+      <p class="branchHelp">Secilen profil, kaynak repo, branch ve tam SHA icin tekrarlanabilir bir plan olusturur. Kaynak dogrulanmis sayilmaz; gerceklestirilmeyen her test NOT_RUN kalir. Kayit diske yazilmaz.</p>
+      <button id="buildExperimentPlan" type="button">Deney planini olustur</button>
+      <pre id="experimentPlanOutput" class="labReport" role="status" aria-live="polite">Deney plani henuz olusturulmadi.</pre>
+    </div>
     <div class="actions">
       <button id="test" class="primary" type="button">THOR Dosyası Seç ve Test Et</button>
       <button id="details" type="button">Sürüm Bilgisi</button>
@@ -118,7 +125,7 @@ Bagimli Oldugu Katman: View
     </div>
     <div id="result" class="msg" role="status" aria-live="polite">Hazır — yalnızca yerel THOR dosyaları test edilir.</div>
   </section>
-  <div class="foot">Bu önizleme ayrı bir EXE'dir; gerçek Ragnarok klasöründe kurulum yapmaz, ağdan paket indirmez, oyun açmaz ve otomatik güncelleme çalıştırmaz. Windows WebView2 gerektirir.</div>
+  <div class="foot">Bu EXE yalnizca dahili gelistirici laboratuvaridir; son kullaniciya dagitilmaz. Gercek Ragnarok klasorunu degistirmez, patch indirmez, oyun acmaz. Windows WebView2 gerektirir.</div>
 </main>
 <script>
 (function () {
@@ -138,10 +145,17 @@ Bagimli Oldugu Katman: View
   const checkManifest=document.getElementById("checkManifest");
   const checkSignedManifest=document.getElementById("checkSignedManifest");
   const manifestNote=document.getElementById("manifestNote");
+  const buildExperimentPlan=document.getElementById("buildExperimentPlan");
+  const experimentPlanOutput=document.getElementById("experimentPlanOutput");
   const showAllBranches=document.getElementById("showAllBranches");
   let visibleBranches=[];
   let branchRequestVersion=0;
   let manifestSelectionVersion=0;
+  let experimentSelectionVersion=0;
+  const invalidateExperimentPlan=()=>{
+    experimentSelectionVersion+=1;
+    experimentPlanOutput.textContent="Secim degisti. Yeni deney plani olusturulmasi gerekli.";
+  };
   const invalidateManifest=()=>{
     manifestSelectionVersion+=1;
     manifestNote.textContent="Secim degisti. Manifest yeniden incelenmeli; kurulum kapali.";
@@ -153,11 +167,13 @@ Bagimli Oldugu Katman: View
     branchInfo.textContent="";
   };
   profileInput.addEventListener("change", ()=>{
+    invalidateExperimentPlan();
     invalidateManifest();
     branchMessage.textContent="İstemci profili seçildi: "+profileInput.options[profileInput.selectedIndex].text+
       ". Gerçek güncelleme sistemi değiştirilmedi.";
   });
   projectInput.addEventListener("change",()=>{
+    invalidateExperimentPlan();
     invalidateManifest();
     branchRequestVersion+=1;
     resetBranches();
@@ -166,6 +182,7 @@ Bagimli Oldugu Katman: View
       : "Yeni kaynak deposu seçildi; dalları tekrar yükle.";
   });
   showAllBranches.addEventListener("change",()=>{
+    invalidateExperimentPlan();
     invalidateManifest();
     branchRequestVersion+=1;
     resetBranches();
@@ -174,6 +191,7 @@ Bagimli Oldugu Katman: View
       : "Standart görünüm seçildi. Aktif dalları görmek için GitHub dallarını getir.";
   });
   branchInput.addEventListener("change",()=>{
+    invalidateExperimentPlan();
     invalidateManifest();
     const selected=visibleBranches.find(b=>b.name===branchInput.value);
     branchInfo.textContent=selected
@@ -190,6 +208,7 @@ Bagimli Oldugu Katman: View
     const project=projectInput.value;
     const includeAll=showAllBranches.checked;
     const requestVersion=++branchRequestVersion;
+    invalidateExperimentPlan();
     invalidateManifest();
     resetBranches();
     loadBranches.disabled=true;
@@ -284,6 +303,36 @@ Bagimli Oldugu Katman: View
       }
     }finally{
       checkSignedManifest.disabled=false;
+    }
+  });
+
+  buildExperimentPlan.addEventListener("click",async ()=>{
+    if(!invoke){
+      experimentPlanOutput.textContent="Deney planlama yalnizca BEAM Windows uygulamasinda calisir.";
+      return;
+    }
+    const selected=visibleBranches.find(b=>b.name===branchInput.value);
+    if(!selected){
+      experimentPlanOutput.textContent="Once kaynak depodaki bir dali getir ve sec.";
+      return;
+    }
+    const version=++experimentSelectionVersion;
+    const profile=profileInput.value;
+    const project=projectInput.value;
+    buildExperimentPlan.disabled=true;
+    experimentPlanOutput.textContent="Deney plani hazirlaniyor...";
+    try{
+      const report=await invoke("preview_experiment_plan",{
+        profile, project, branch:selected.name, sha:selected.sha
+      });
+      if(version!==experimentSelectionVersion)return;
+      experimentPlanOutput.textContent=JSON.stringify(report,null,2);
+    }catch(e){
+      if(version===experimentSelectionVersion){
+        experimentPlanOutput.textContent="Deney plani reddedildi: "+String(e);
+      }
+    }finally{
+      buildExperimentPlan.disabled=false;
     }
   });
 
