@@ -71,3 +71,8 @@ Yeni Rust servisi yerel JSON zarfindaki `schema`, `key_id`, `payload_b64`, `sign
 **Su an gercek yayin anahtari kayitli degildir.** `config/trusted_signers.rs` icindeki `PRODUCTION_SIGNERS` bos ve Windows komutu herhangi bir imzayi kabul etmez. Sadece Rust unit testlerine `#[cfg(test)]` ile derlenen deterministik test ozel anahtari kullanilir; bu anahtar son kullanici EXE'sinde ve yayin guven zincirinde yer almaz.
 
 Anahtar sahibinin resmen belirlenmesi, offline imzalama, anahtar rotasyonu/iptali ve gercek paket hash/transaction kontrolu sonraki zorunlu release gate'lerdir. Ozel RagnarokClient'a GitHub uygulama kimlik bilgisi gereklidir; ChatGPT GitHub baglantisinin yetkisi BEAM masaustune aktarilmaz.
+
+
+### Imzali zarf kontrolu - Windows test UI
+
+`Imzali manifest kontrolu (test)` sadece kullanicinin yerel JSON zarfini okur. Guvenilir yayin anahtari bos oldugundan gercek uygulama her zaman **ret** verir. Unit testlerinde gecici test anahtari ile kriptografik dogrulama sinanir. Imzanin dogrulanmasi, paket SHA-256'sinin dogrulanmasi veya yukleme izninin verilmesi demek degildir.

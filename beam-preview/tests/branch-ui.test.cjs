@@ -1,7 +1,7 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/tests/branch-ui.test.cjs
 // 📌 Amac: GUI branch listesi secimini ag baglantisi olmadan dogrulamak
 // 📌 Modul - JavaScript Test
-// Version: 0.3.1
+// Version: 0.4.0
 // Aciklama: Branch kimligi, manifest on-kontrol ve eski yanitlari dogrula
 // Bagimli Oldugu Katman: Tool | View | Language
 
@@ -59,7 +59,7 @@ class FakeElement {
 
 function boot(invoke, dialogPath = null) {
   const ids = ["result", "test", "details", "quit", "clientProfile", "sourceProject",
-    "branchList", "branchSha", "branchNote", "loadBranches", "showAllBranches", "checkManifest", "manifestNote"];
+    "branchList", "branchSha", "branchNote", "loadBranches", "showAllBranches", "checkManifest", "manifestNote", "checkSignedManifest"];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
   elements.sourceProject.value = "translation";
   elements.clientProfile.options = [{ value: "hybrid-2022", text: "2022 Hybrid" }];
@@ -228,4 +228,32 @@ test("stale manifest results are discarded if selection changes", async () => {
   await pending;
   assert.match(elements.manifestNote.textContent, /Secim degisti/);
   assert.doesNotMatch(elements.manifestNote.textContent, /Metadata eslesti/);
+});
+
+test("signed preview rejects an untrusted production key and never enables updates", async () => {
+  const calls = [];
+  const { elements, fire } = boot(async (command, params) => {
+    if (command === "preview_list_branches") return [{
+      name: "translation/tr", sha: SHA, short_sha: SHA.slice(0, 12), protected: false
+    }];
+    if (command === "preview_check_signed_manifest") {
+      calls.push(params);
+      throw new Error("BEAM icin guvenilir imza anahtari kayitli degil.");
+    }
+    throw new Error("Unexpected command");
+  }, "C:/test/signed-envelope.json");
+  await fire("loadBranches", "click");
+  await fire("checkSignedManifest", "click");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].sha, SHA);
+  assert.match(elements.manifestNote.textContent, /Imzali manifest reddedildi/);
+  assert.match(elements.manifestNote.textContent, /Kurulum KAPALI/);
+  assert.equal(elements.checkSignedManifest.disabled, false);
+});
+
+test("signed preview cannot start until repository branch is selected", async () => {
+  const { elements, fire } = boot(async () => { throw new Error("must not run"); },
+    "C:/test/signed-envelope.json");
+  await fire("checkSignedManifest", "click");
+  assert.match(elements.manifestNote.textContent, /Once kaynak depoyu/);
 });

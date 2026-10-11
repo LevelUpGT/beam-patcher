@@ -3,8 +3,8 @@
 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/public/index.html
 📌 Amac: BEAM onizleme istemci profili ve salt okunur branch secim arayuzu
 📌 Modul - HTML
-Version: 0.3.0
-Aciklama: Salt okunur JSON manifest on-kontrolu ve imzasiz paketler icin blokaj
+Version: 0.4.0
+Aciklama: Imzali manifest taslagi butonu ve guvenilir anahtar yoksa kapali mod
 Bagimli Oldugu Katman: View
 -->
 <html lang="tr">
@@ -106,6 +106,7 @@ Bagimli Oldugu Katman: View
       <h3>Manifest on-kontrolu <span style="color:#86b5e6;font-size:12px;font-weight:400">· metadata / imza dogrulanmadi</span></h3>
       <p class="branchHelp">Secili istemci profili ve GitHub dalinin commit kimligi ile yerel bir JSON manifest taslagini karsilastirir. Paket indirimi, imza kontrolu ve oyun kurulumu yapmaz.</p>
       <button id="checkManifest" type="button">Yerel manifest taslagi sec ve incele</button>
+      <button id="checkSignedManifest" type="button">Imzali manifest kontrolu (test)</button>
       <div class="branchNote" id="manifestNote" role="status" aria-live="polite">Manifest incelenmedi. Gunceleme yetkisi: KAPALI.</div>
     </div>
     <div class="actions">
@@ -135,6 +136,7 @@ Bagimli Oldugu Katman: View
   const branchMessage=document.getElementById("branchNote");
   const loadBranches=document.getElementById("loadBranches");
   const checkManifest=document.getElementById("checkManifest");
+  const checkSignedManifest=document.getElementById("checkSignedManifest");
   const manifestNote=document.getElementById("manifestNote");
   const showAllBranches=document.getElementById("showAllBranches");
   let visibleBranches=[];
@@ -246,6 +248,43 @@ Bagimli Oldugu Katman: View
     }catch(e){
       if(version===manifestSelectionVersion)manifestNote.textContent="Manifest reddedildi: "+String(e)+". Kurulum kapali.";
     }finally{checkManifest.disabled=false;}
+  });
+
+
+  checkSignedManifest.addEventListener("click",async ()=>{
+    if(!tauri || !tauri.dialog || !invoke){
+      manifestNote.textContent="Imza on-kontrolu yalnizca BEAM Windows uygulamasinda calisir.";
+      return;
+    }
+    const selected=visibleBranches.find(b=>b.name===branchInput.value);
+    if(!selected){
+      manifestNote.textContent="Once kaynak depoyu ve bir branch sec. Kurulum kapali.";
+      return;
+    }
+    const profile=profileInput.value;
+    const project=projectInput.value;
+    const branch=selected.name;
+    const sha=selected.sha;
+    const version=++manifestSelectionVersion;
+    try{
+      const path=await tauri.dialog.open({
+        multiple:false,filters:[{name:"Ed25519 Imzali JSON Zarf",extensions:["json"]}]
+      });
+      if(!path || typeof path!=="string" || version!==manifestSelectionVersion)return;
+      checkSignedManifest.disabled=true;
+      manifestNote.textContent="Ed25519 imzasi denetleniyor. Paket ve kurulum yetkisi KAPALI.";
+      const report=await invoke("preview_check_signed_manifest",{path,profile,project,branch,sha});
+      if(version!==manifestSelectionVersion)return;
+      manifestNote.textContent=report.signature_verified && !report.installation_allowed
+        ? "Imza gecerli. Paket baytlari hala DOGRULANMADI; kurulum KAPALI."
+        : "Imza guvenilir degil veya kontrol eksik. Kurulum KAPALI.";
+    }catch(e){
+      if(version===manifestSelectionVersion){
+        manifestNote.textContent="Imzali manifest reddedildi: "+String(e)+". Kurulum KAPALI.";
+      }
+    }finally{
+      checkSignedManifest.disabled=false;
+    }
   });
 
   document.getElementById("details").addEventListener("click", async () => {
