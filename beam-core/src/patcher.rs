@@ -48,12 +48,25 @@ fn validate_patch_filename(name: &str) -> Result<()> {
 fn checked_client_destination(root: &Path, name: &str) -> Result<PathBuf> {
     validate_client_path(name)?;
     let normalized = name.replace('\\', "/");
+    let first_segment = normalized.split('/').next().unwrap_or("");
+    if first_segment.starts_with(TXN_PREFIX) || first_segment.eq_ignore_ascii_case(".patch_cache") {
+        return Err(Error::PatchFailed("Protected patcher metadata path".to_string()));
+    }
     let segments: Vec<_> = normalized.split('/').collect();
     let mut path = root.to_path_buf();
     for (index, segment) in segments.iter().enumerate() {
         path.push(segment);
         match std::fs::symlink_metadata(&path) {
             Ok(metadata) => {
+                #[cfg(windows)]
+                {
+                    use std::os::windows::fs::MetadataExt;
+                    if metadata.file_attributes() & 0x400 != 0 {
+                        return Err(Error::PatchFailed(
+                            "Refusing Windows reparse-point path".to_string()
+                        ));
+                    }
+                }
                 if metadata.file_type().is_symlink()
                     || (index + 1 == segments.len() && !metadata.is_file())
                     || (index + 1 < segments.len() && !metadata.is_dir())
@@ -68,6 +81,144 @@ fn checked_client_destination(root: &Path, name: &str) -> Result<PathBuf> {
         }
     }
     Ok(path)
+}
+
+
+// Persistent recovery metadata lives only in the transaction directory.
+// No remote THOR entry is allowed to write to this reserved directory.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ClientRecoveryJournal {
+    version: u32,
+    entries: Vec<ClientRecoveryEntry>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ClientRecoveryEntry {
+    relative_path: String,
+    had_original: bool,
+}
+
+const TXN_PREFIX: &str = ".beam-patch-txn-";
+
+fn sync_file(path: &Path) -> Result<()> {
+    std::fs::OpenOptions::new().write(true).open(path)?.sync_all()?;
+    Ok(())
+}
+
+fn recovery_marker(path: &Path, marker: &str) -> Result<()> {
+    let marker_path = path.join(marker);
+    let mut file = std::fs::OpenOptions::new()
+        .write(true).create_new(true).open(marker_path)?;
+    std::io::Write::write_all(&mut file, marker.as_bytes())?;
+    file.sync_all()?;
+    Ok(())
+}
+
+fn store_recovery_journal(path: &Path, changes: &[ClientChange], root: &Path) -> Result<()> {
+    let mut entries = Vec::with_capacity(changes.len());
+    for item in changes {
+        let relative = item.destination.strip_prefix(root)
+            .map_err(|_| Error::PatchFailed("Unsafe recovery destination".to_string()))?;
+        let value = relative.to_str().ok_or_else(|| Error::PatchFailed(
+            "Recovery destination has invalid encoding".to_string()
+        ))?.replace('\\', "/");
+        validate_client_path(&value)?;
+        entries.push(ClientRecoveryEntry {
+            relative_path: value,
+            had_original: item.backup.is_some(),
+        });
+    }
+    let journal = ClientRecoveryJournal { version: 1, entries };
+    let raw = serde_json::to_vec(&journal)
+        .map_err(|e| Error::PatchFailed(format!("Journal serialization failed: {e}")))?;
+    let file_path = path.join("journal.json");
+    let mut file = std::fs::OpenOptions::new()
+        .create_new(true).write(true).open(file_path)?;
+    std::io::Write::write_all(&mut file, &raw)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+fn recover_interrupted_client_transactions(root: &Path) -> Result<()> {
+    for item in std::fs::read_dir(root)? {
+        let item = item?;
+        let file_name = item.file_name();
+        let Some(name) = file_name.to_str() else { continue };
+        if !name.starts_with(TXN_PREFIX) {
+            continue;
+        }
+        let txn = item.path();
+        let metadata = std::fs::symlink_metadata(&txn)?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err(Error::PatchFailed(format!(
+                "Unsafe interrupted transaction path: {}", txn.display()
+            )));
+        }
+
+        // COMMITTED means files were replaced successfully; only garbage
+        // collection was interrupted. Do not undo already applied files.
+        if txn.join("COMMITTED").exists() {
+            std::fs::remove_dir_all(&txn)?;
+            continue;
+        }
+
+        if txn.join("COMMITTING").exists() {
+            let raw = std::fs::read(txn.join("journal.json"))?;
+            let journal: ClientRecoveryJournal = serde_json::from_slice(&raw)
+                .map_err(|e| Error::PatchFailed(format!(
+                    "Invalid recovery journal {}: {e}", txn.display()
+                )))?;
+            if journal.version != 1 || journal.entries.is_empty() || journal.entries.len() > 100_000 {
+                return Err(Error::PatchFailed("Unsafe recovery journal version/count".to_string()));
+            }
+
+            // Check ALL recorded files and backups before writing any of them.
+            let mut restored = Vec::with_capacity(journal.entries.len());
+            let mut seen = std::collections::HashSet::new();
+            for (index, record) in journal.entries.iter().enumerate() {
+                let destination = checked_client_destination(root, &record.relative_path)?;
+                if !seen.insert(record.relative_path.replace('\\', "/").to_lowercase()) {
+                    return Err(Error::PatchFailed("Duplicate recovery destination".to_string()));
+                }
+                let backup = txn.join(format!("backup-{index}"));
+                if record.had_original {
+                    let metadata = std::fs::symlink_metadata(&backup)?;
+                    if !metadata.is_file() || metadata.file_type().is_symlink() {
+                        return Err(Error::PatchFailed(
+                            "Recovery backup is not a regular file".to_string()
+                        ));
+                    }
+                }
+                restored.push((destination, record.had_original.then_some(backup)));
+            }
+
+            for (destination, backup) in restored.iter().rev() {
+                if destination.exists() {
+                    std::fs::remove_file(destination)?;
+                }
+                if let Some(backup) = backup {
+                    if let Some(parent) = destination.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::copy(backup, destination)?;
+                    sync_file(destination)?;
+                }
+            }
+            // Safe for another interrupted recovery: backups remain untouched
+            // until all restores finish, then the directory can be removed.
+            std::fs::remove_dir_all(&txn)?;
+            info!("Recovered and rolled back interrupted BEAM transaction");
+        } else if txn.join("PREPARING").exists() {
+            // Nothing was written to the client before COMMITTING existed.
+            std::fs::remove_dir_all(&txn)?;
+        } else {
+            return Err(Error::PatchFailed(format!(
+                "Unknown patch transaction state in {}. Manual recovery required.",
+                txn.display()
+            )));
+        }
+    }
+    Ok(())
 }
 
 struct ClientChange {
@@ -88,6 +239,8 @@ fn apply_loose_thors(game_root: &Path, archives: &[Thor]) -> Result<()> {
     if !root.is_dir() {
         return Err(Error::PatchFailed("Game root is not a directory".to_string()));
     }
+    // Recover (or refuse) leftovers before preparing a new patch.
+    recover_interrupted_client_transactions(&root)?;
 
     // Keys are Windows case-insensitive, even when validating on Linux.
     let mut plan: BTreeMap<String, (PathBuf, Option<Vec<u8>>)> = BTreeMap::new();
@@ -134,6 +287,7 @@ fn apply_loose_thors(game_root: &Path, archives: &[Thor]) -> Result<()> {
         ".beam-patch-txn-{}-{timestamp}", std::process::id()
     ));
     std::fs::create_dir(&staging_root)?;
+    recovery_marker(&staging_root, "PREPARING")?;
 
     let prepared: Result<Vec<ClientChange>> = (|| {
         let mut changes = Vec::with_capacity(plan.len());
@@ -148,6 +302,7 @@ fn apply_loose_thors(game_root: &Path, archives: &[Thor]) -> Result<()> {
             let backup = if dest.exists() {
                 let path = staging_root.join(format!("backup-{index}"));
                 std::fs::copy(dest, &path)?;
+                sync_file(&path)?;
                 Some(path)
             } else {
                 None
@@ -155,6 +310,7 @@ fn apply_loose_thors(game_root: &Path, archives: &[Thor]) -> Result<()> {
             let staged = if let Some(bytes) = contents {
                 let path = staging_root.join(format!("new-{index}"));
                 std::fs::write(&path, bytes)?;
+                sync_file(&path)?;
                 Some(path)
             } else {
                 None
@@ -173,6 +329,13 @@ fn apply_loose_thors(game_root: &Path, archives: &[Thor]) -> Result<()> {
             return Err(error);
         }
     };
+    // Only permit client writes after durable metadata and all backups exist.
+    if let Err(error) = store_recovery_journal(&staging_root, &changes, &root)
+        .and_then(|()| recovery_marker(&staging_root, "COMMITTING"))
+    {
+        let _ = std::fs::remove_dir_all(&staging_root);
+        return Err(error);
+    }
     let mut touched = Vec::new();
     let mut failure = None;
     for (idx, item) in changes.iter().enumerate() {
@@ -200,6 +363,14 @@ fn apply_loose_thors(game_root: &Path, archives: &[Thor]) -> Result<()> {
         }
     }
 
+    if failure.is_none() {
+        // A successful batch receives its own durable state marker; on the
+        // next run, interrupted cleanup will not undo completed updates.
+        if let Err(error) = recovery_marker(&staging_root, "COMMITTED") {
+            failure = Some(error);
+        }
+    }
+
     if let Some(error) = failure {
         let mut rollback_error = None;
         for idx in touched.into_iter().rev() {
@@ -210,6 +381,7 @@ fn apply_loose_thors(game_root: &Path, archives: &[Thor]) -> Result<()> {
                 }
                 if let Some(ref backup) = change.backup {
                     std::fs::copy(backup, &change.destination)?;
+                    sync_file(&change.destination)?;
                 }
                 Ok(())
             })();
@@ -255,6 +427,7 @@ impl Patcher {
     pub async fn check_available_patches(&self) -> Result<usize> {
         info!("Checking for available patches");
 
+        self.ensure_recovered_client_state()?;
         let patches = self.downloader.download_patch_list().await?;
         let patch_count = patches.len();
 
@@ -268,6 +441,7 @@ impl Patcher {
     }
 
     pub async fn get_patch_list(&self) -> Result<Vec<PatchInfo>> {
+        self.ensure_recovered_client_state()?;
         self.downloader.download_patch_list().await
     }
 
@@ -283,6 +457,7 @@ impl Patcher {
     where
         F: FnMut(u64, u64) + Send + 'static,
     {
+        self.ensure_recovered_client_state()?;
         validate_patch_filename(&patch.filename)?;
         let patch_path = self.temp_dir.join(&patch.filename);
 
@@ -319,6 +494,8 @@ impl Patcher {
     where
         F: FnMut(usize, usize, u64, u64) + Send + 'static,
     {
+        // Recover an interrupted transaction even when the remote list is empty.
+        self.ensure_recovered_client_state()?;
         if patches.is_empty() {
             return Ok(());
         }
@@ -421,6 +598,7 @@ impl Patcher {
 
     /// One-shot apply: opens its own GRF, applies, saves.
     pub async fn apply_patch(&self, patch_path: &Path) -> Result<()> {
+        self.ensure_recovered_client_state()?;
         if patch_path.extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| extension.eq_ignore_ascii_case("thor"))
@@ -551,6 +729,10 @@ impl Patcher {
         self.apply_patch(patch_path).await
     }
 
+    fn ensure_recovered_client_state(&self) -> Result<()> {
+        recover_interrupted_client_transactions(&self.get_game_root()?)
+    }
+
     fn get_game_root(&self) -> Result<PathBuf> {
         match &self.config.app.game_directory {
             Some(path) => Ok(std::fs::canonicalize(path)?),
@@ -584,6 +766,109 @@ impl Patcher {
 #[cfg(test)]
 mod thor_guards_tests {
     use super::*;
+
+
+    #[test]
+    fn recovers_interrupted_client_write_from_durable_backup() {
+        let root = std::env::temp_dir().join(format!(
+            "beam-loose-recovery-{}-{}", std::process::id(), 801
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("data")).unwrap();
+        let path = root.join("data/existing.txt");
+        std::fs::write(&path, b"original").unwrap();
+        let txn = root.join(".beam-patch-txn-fixture");
+        std::fs::create_dir(&txn).unwrap();
+        recovery_marker(&txn, "PREPARING").unwrap();
+        let backup = txn.join("backup-0");
+        std::fs::copy(&path, &backup).unwrap();
+        std::fs::write(&path, b"incomplete-update").unwrap();
+        let changes = [ClientChange {
+            destination: path.clone(), staged: None, backup: Some(backup),
+        }];
+        store_recovery_journal(&txn, &changes, &root).unwrap();
+        recovery_marker(&txn, "COMMITTING").unwrap();
+
+        recover_interrupted_client_transactions(&root).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"original");
+        assert!(!txn.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn cleans_preparing_transaction_without_client_changes() {
+        let root = std::env::temp_dir().join(format!(
+            "beam-loose-preparing-{}-{}", std::process::id(), 802
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let txn = root.join(".beam-patch-txn-fixture");
+        std::fs::create_dir(&txn).unwrap();
+        recovery_marker(&txn, "PREPARING").unwrap();
+        recover_interrupted_client_transactions(&root).unwrap();
+        assert!(!txn.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn committed_transaction_cleans_up_without_reverting_files() {
+        let root = std::env::temp_dir().join(format!(
+            "beam-loose-committed-{}-{}", std::process::id(), 803
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let original = root.join("names.txt");
+        std::fs::write(&original, b"updated").unwrap();
+        let txn = root.join(".beam-patch-txn-fixture");
+        std::fs::create_dir(&txn).unwrap();
+        recovery_marker(&txn, "PREPARING").unwrap();
+        recovery_marker(&txn, "COMMITTED").unwrap();
+        recover_interrupted_client_transactions(&root).unwrap();
+        assert_eq!(std::fs::read(&original).unwrap(), b"updated");
+        assert!(!txn.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn missing_backup_blocks_recovery_without_overwriting_client() {
+        let root = std::env::temp_dir().join(format!(
+            "beam-loose-missing-{}-{}", std::process::id(), 804
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let target = root.join("original.txt");
+        std::fs::write(&target, b"partially-updated").unwrap();
+        let txn = root.join(".beam-patch-txn-fixture");
+        std::fs::create_dir(&txn).unwrap();
+        recovery_marker(&txn, "PREPARING").unwrap();
+        let changes = [ClientChange {
+            destination: target.clone(),
+            staged: None,
+            backup: Some(txn.join("backup-0")),
+        }];
+        store_recovery_journal(&txn, &changes, &root).unwrap();
+        recovery_marker(&txn, "COMMITTING").unwrap();
+
+        assert!(recover_interrupted_client_transactions(&root).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"partially-updated");
+        assert!(txn.exists(), "preserve journal for manual recovery");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn refuses_patcher_internal_directory_names_in_thor() {
+        let root = std::env::temp_dir().join(format!(
+            "beam-loose-protected-{}-{}", std::process::id(), 805
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(checked_client_destination(&root, ".patch_cache/applied_patches.txt").is_err());
+        assert!(checked_client_destination(&root, ".beam-patch-txn-forged/journal.json").is_err());
+        let mut patch = Thor::new();
+        patch.add_file(".patch_cache/applied_patches.txt", b"fake-state");
+        assert!(apply_loose_thors(&root, &[patch]).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn applies_loose_client_thor_without_creating_grf() {
