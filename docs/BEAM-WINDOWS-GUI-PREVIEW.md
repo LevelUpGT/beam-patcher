@@ -2,13 +2,13 @@
 📄 Dosya Yolu: /LevelUpGT/beam-patcher/docs/BEAM-WINDOWS-GUI-PREVIEW.md
 📌 Amac: BEAM Windows onizleme paketinin guvenli yerel test talimati
 📌 Modul - Markdown
-Version: 0.3.0
-Aciklama: Profil-eslesme ve manifest taslagi testinin sinirlarini aciklar
+Version: 0.5.0
+Aciklama: Gelistiriciye ozel deney plani, kapsam sinirlari ve test kabullerini aciklar
 Bagimli Oldugu Katman: View | Language
 -->
-# BEAM Patcher — Windows GUI Preview
+# BEAM Patcher - Windows Deney Laboratuvari
 
-**Bu paket bir grafik penceresi açar.** Önceki \`thor_smoke.exe\` gibi konsol aracı değildir.
+**Bu paket yalnizca gelistirme ve deney amaclidir.** Son kullaniciya dagitilmayacak; oyuncu icin updater, oyun baslatici veya final yayin hatti hedeflenmeyecektir. Grafik pencere eski \`thor_smoke.exe\` konsol aracindan ayridir.
 
 - Dosya: \`BEAM-Patcher-Preview.exe\`
 - İşletim sistemi: Windows 10/11 x64 (Microsoft Edge WebView2 Runtime gerekli)
@@ -29,7 +29,7 @@ Başlatmada pencere gelmezse \`Microsoft Edge WebView2 Runtime\` kurulumu / anti
 
 ## Önceki konsol aracıyla fark
 
-\`thor_smoke.exe\` yalnızca komut satırı test aracıdır ve çift tıkla pencere açmaz. Bu proje gerçek bir **Tauri Windows desktop GUI** oluşturur. Şimdilik önizlemede OYNA/Güncelle özellikleri kapalıdır; gerçek istemciye bağlanacak tam launcher ilerideki ayrı doğrulama aşamasıdır.
+\`thor_smoke.exe\` yalnızca komut satırı test aracıdır ve çift tıkla pencere açmaz. Bu proje gerçek bir **Tauri Windows desktop GUI** oluşturur. Bu laboratuvarda OYNA/Guncelle ve oyuncuya yayin ozellikleri kalici olarak kapsam disidir; yeni test arayuzu oyuncu launcher'ina donusturulmeyecektir.
 
 Kaynak: `beam-preview/public/index.html`, `beam-preview/src/main.rs`, `beam-preview/tauri.conf.json`. Bagimsiz crate; eski BEAM Tauri UI yuklenmez. İstemciler: 2015 Thor, yeni 2015 rPatchur, 2022 rPatchur kanalları mevcut halleriyle çalışmaya devam eder.
 
@@ -41,7 +41,7 @@ Kaynak: `beam-preview/public/index.html`, `beam-preview/src/main.rs`, `beam-prev
 - Dal seçimi: branch adı, commit SHA ve korumalı dal bilgisi gösterilir. **Git checkout, branch içeriği indirme, yerel dosya değişimi, THOR uygulaması veya kanal değiştirme yapılmaz.**
 - \`LevelUpGT/RagnarokClient\` özel depodur; kişisel token depolanmadan/uygulamaya gömülmeden bu sürümde dallarını göstermez. İleride güvenli yetkili servis üzerinden sorgulanabilir.
 - Branch isimleri kullanıcı girdisi olarak serbest GitHub URL'sine çevrilmez. Backend API yalnızca iki allowlist reposunu sorgular; erişim kimliği paylaşılmaz.
-- Asıl sürüm/branch ayrımı: İstemci profili = uyumlu oyun sürümü; Git branch = kaynak kodu/test dalı; Stable/Beta = paket dağıtım kanalı. Bunların her birinin kimliği ve yama geçmişi ileride ayrı saklanacaktır.
+- Kaynak ayrimi: Istemci profili oyun surumu deneyini; Git branch kaynak kodu ve commit'i gosterir. Manifestteki stable/beta alanlari yalnizca eski test semasi metadata'sidir; oyuncu dagitim kanali olarak kullanilmaz.
 - README ve grafik arayüzdeki başlık: bu özellik henüz **profil bazlı uygulama kurulum izni** vermez. SHA-256/signed manifest ve yedekli kurulum olmadan **Güncelle/OYNA kapalıdır**.
 
 
@@ -76,3 +76,23 @@ Anahtar sahibinin resmen belirlenmesi, offline imzalama, anahtar rotasyonu/iptal
 ### Imzali zarf kontrolu - Windows test UI
 
 `Imzali manifest kontrolu (test)` sadece kullanicinin yerel JSON zarfini okur. Guvenilir yayin anahtari bos oldugundan gercek uygulama her zaman **ret** verir. Unit testlerinde gecici test anahtari ile kriptografik dogrulama sinanir. Imzanin dogrulanmasi, paket SHA-256'sinin dogrulanmasi veya yukleme izninin verilmesi demek degildir.
+
+## Gelistirici deney plani (v0.5, kurulum yok)
+
+- `Deney planini olustur` butonu, secilen istemci profili, allowlist GitHub deposu, branch ve tam 40 karakter commit SHA uzerinden JSON plan uretir.
+- Plan `levelupgt.beam.experiment-plan.v1` semasini kullanir. `audience=DEVELOPER_ONLY`, `status=PLAN_ONLY` ve `source_verification=USER_SELECTION_UNVERIFIED` olarak gelir. Plan derlenirken harici API'ye gidilmez; sectiginiz SHA bagimsiz dogrulanmis sayilmaz.
+- Plan her zaman 7 adimi `NOT_RUN` seklinde listeler: branch_metadata, manifest_metadata, ed25519_signature, package_sha256, thor_sandbox, in_game_client, rollback_recovery.
+- THOR sandbox veya manifest komutunu ayni oturumda ayrica basariyla calistirmis olmak, bu **plan** icindeki `NOT_RUN` durumlarini otomatik PASS yapmaz. Plan ile olculmus test sonucu birbirinden ayridir. Ayrica audit kayit sistemi gelene kadar belge test raporu sayilmaz.
+- `installation_allowed=false`, `game_launch_allowed=false`, `player_distribution_allowed=false` alanlari kesin kuraldir.
+- Secim degisince eski plan gorunmez; halen devam eden cevap gelse bile eski secimin sonucu tekrar kullanilmaz.
+- Cikti yalnizca pencere icindeki secilebilir JSON metnidir; diske otomatik kaydedilmez, oyun dosyalari degistirilmez, Git checkout veya patch uygulanmaz.
+- `old-2015` icin motor `legacy-thor`, `new-2015` ve `hybrid-2022` icin `rpatchur` olarak raporlanir. Bu uyumlulugun gercek istemcide kanitlandigi anlamina gelmez.
+
+### Regresyon kontrolleri
+
+Windows GUI Preview CI iki katmani dogrular:
+
+1. Node UI testleri: profil/branch secimi, tam SHA, diger repo yanitlarini eleme, rapor gecersizlestirme ve `NOT_RUN` sunumu.
+2. Rust servis testleri: allowlist depo, guvenli branch formati, tam SHA, profil/motor eslesmesi ve kurulum/oyun/dagitim izinlerinin tamamen kapali olmasi.
+
+Yerel Windows GUI icinde GitHub API erisimi veya Ragnarok'a gercek giris testi CI basarisi ile otomatik dogrulanmis sayilmaz.
