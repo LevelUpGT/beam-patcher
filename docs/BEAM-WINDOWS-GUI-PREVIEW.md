@@ -2,7 +2,7 @@
 📄 Dosya Yolu: /LevelUpGT/beam-patcher/docs/BEAM-WINDOWS-GUI-PREVIEW.md
 📌 Amac: BEAM Windows onizleme paketinin guvenli yerel test talimati
 📌 Modul - Markdown
-Version: 0.5.0
+Version: 0.6.0
 Aciklama: Gelistiriciye ozel deney plani, kapsam sinirlari ve test kabullerini aciklar
 Bagimli Oldugu Katman: View | Language
 -->
@@ -96,3 +96,12 @@ Windows GUI Preview CI iki katmani dogrular:
 2. Rust servis testleri: allowlist depo, guvenli branch formati, tam SHA, profil/motor eslesmesi ve kurulum/oyun/dagitim izinlerinin tamamen kapali olmasi.
 
 Yerel Windows GUI icinde GitHub API erisimi veya Ragnarok'a gercek giris testi CI basarisi ile otomatik dogrulanmis sayilmaz.
+
+
+## Yerel paket SHA-256 on-kontrolu (v0.6.0)
+
+`Yerel paket SHA-256 kontrolu` butonu once imzasiz manifest JSON dosyasini, sonra yerel paket dosyasini ister. BEAM secili profili, kaynak depoyu, branch'i ve tam commit SHA'yi manifestle karsilastirir. Sonra dosya **yalnizca okunur**, SHA-256 64 KiB bloklarla hesaplanir, gercek boyut ve hash manifestteki beyanla karsilastirilir.
+
+**GUVENLIK SINIRI:** Bu testte manifest imzasizdir. Eslesme, imzasiz beyanin gercek dosyayla tutarli oldugunu gosterir; paketin guvenilir veya yayin icin uygun oldugu anlamina gelmez. `signature_verified=false` ve `installation_allowed=false` zorunludur. Oyuna kurulum, dosya cikartma, GRF degistirme, guncelleme veya OYNA islemi yapilmaz. Gercek imzali yayin anahtarlari yine bos kalir.
+
+CI testleri: gercek paket ozetinin eslesmesi; ayni boydaki bozulmus paket; farkli boyut; yanlis profil; eksik/bozuk dosya; kaynak secimi degisince gecersizlesme; Windows GUI pencere acilisi. Bu test oyuncuya acik guncellemenin onayi degildir.

@@ -1,7 +1,7 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/src/main.rs
 // 📌 Amac: BEAM Windows GUI onizleme controller komutlari ve guvenli branch sorgulari
 // 📌 Modul - Rust
-// Version: 0.5.0
+// Version: 0.6.0
 // Aciklama: Deneysel laboratuvar planini yalnizca Service uzerinden olusturur; kurulum kapali
 // Bagimli Oldugu Katman: Controller | Service | Tool | View | Language
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -17,9 +17,11 @@ mod services {
     pub mod experiment_lab;
     pub mod manifest_preflight;
     pub mod signed_manifest;
+    pub mod package_integrity;
 }
 mod tools {
     pub mod manifest_reader;
+    pub mod package_reader;
 }
 
 use serde::Serialize;
@@ -225,6 +227,23 @@ fn preview_experiment_plan(
     services::experiment_lab::build(&profile, &project, &branch, &sha)
 }
 
+#[tauri::command]
+async fn preview_verify_local_package(
+    manifest_path: String, package_path: String,
+    profile: String, project: String, branch: String, sha: String,
+) -> Result<services::manifest_preflight::ManifestPreflightReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = tools::manifest_reader::read_local_json(
+            &manifest_path, config::client_profiles::MAX_MANIFEST_BYTES,
+        )?;
+        services::package_integrity::verify_local_unsigned(
+            &bytes, &package_path, &profile, &project, &branch, &sha,
+        )
+    })
+    .await
+    .map_err(|_| "Yerel paket incelemesi tamamlanamadi.".to_string())?
+}
+
 #[cfg(test)]
 mod branch_profiles_tests {
     use super::*;
@@ -297,7 +316,8 @@ fn main() {
             preview_list_branches,
             preview_check_manifest,
             preview_check_signed_manifest,
-            preview_experiment_plan
+            preview_experiment_plan,
+            preview_verify_local_package
         ])
         .run(tauri::generate_context!())
         .expect("Unable to open isolated BEAM GUI Preview window");

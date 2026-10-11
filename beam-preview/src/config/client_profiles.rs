@@ -1,7 +1,7 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/src/config/client_profiles.rs
 // 📌 Amac: BEAM istemci profilini, paket motorunu ve manifest onizleme sinirlarini tanimlamak
 // 📌 Modul - Config Rust
-// Version: 1.0.0
+// Version: 1.1.0
 // Aciklama: Eski 2015, yeni 2015, 2022 Hybrid icin salt okunur eslesme kurallari
 // Bagimli Oldugu Katman: Service
 
@@ -13,6 +13,7 @@ pub const ENGINE_THOR: &str = "legacy-thor";
 pub const ENGINE_RPATCHUR: &str = "rpatchur";
 pub const PREVIEW_SCHEMA: &str = "levelupgt.beam.manifest-preview.v1";
 pub const STATUS_UNVERIFIED: &str = "PREVIEW_ONLY_UNSIGNED";
+pub const STATUS_UNSIGNED_PACKAGE_MATCH: &str = "PREVIEW_UNSIGNED_LOCAL_PACKAGE_MATCH";
 pub const CHANNEL_STABLE: &str = "stable";
 pub const CHANNEL_BETA: &str = "beta";
 
