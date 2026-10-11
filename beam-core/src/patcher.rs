@@ -436,17 +436,50 @@ fn apply_loose_thors(game_root: &Path, archives: &[Thor]) -> Result<()> {
     Ok(())
 }
 
+
+/// Each BEAM patcher instance owns a unique temporary download directory.
+/// Never share a fixed OS-temp patch filename between independent clients.
+fn create_patch_temp_dir() -> Result<PathBuf> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let temporary_root = std::env::temp_dir();
+    for attempt in 0..16u32 {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| Error::PatchFailed(format!("Clock error: {e}")))?
+            .as_nanos();
+        let path = temporary_root.join(format!(
+            "beam-patcher-{}-{}-{attempt}",
+            std::process::id(),
+            nanos
+        ));
+        match std::fs::create_dir(&path) {
+            Ok(()) => return Ok(path),
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) => return Err(err.into()),
+        }
+    }
+    Err(Error::PatchFailed(
+        "Unable to allocate an isolated temporary patch directory".to_string()
+    ))
+}
+
 pub struct Patcher {
     config: Config,
     downloader: Downloader,
     temp_dir: PathBuf,
 }
 
+impl Drop for Patcher {
+    fn drop(&mut self) {
+        // Never wipe a shared temp directory; only the per-instance path.
+        let _ = std::fs::remove_dir_all(&self.temp_dir);
+    }
+}
+
 impl Patcher {
     pub fn new(config: Config) -> Result<Self> {
         let downloader = Downloader::new(config.clone())?;
-        let temp_dir = std::env::temp_dir().join("beam_patcher");
-        std::fs::create_dir_all(&temp_dir)?;
+        let temp_dir = create_patch_temp_dir()?;
 
         Ok(Patcher {
             config,
@@ -880,6 +913,18 @@ mod thor_guards_tests {
         assert!(checked > 0, "at least one installed file must be compared");
         std::fs::remove_dir_all(root).expect("cleanup disposable fixture root");
         eprintln!("Hybrid THOR loose-client fixture: verified {checked} files");
+    }
+
+    #[test]
+    fn patcher_instances_use_distinct_download_directories() {
+        let first = create_patch_temp_dir().expect("first patcher temp dir");
+        let second = create_patch_temp_dir().expect("second patcher temp dir");
+        assert_ne!(first, second, "separate updater instances cannot share downloads");
+        assert!(first.is_dir() && second.is_dir());
+        assert!(!first.parent().unwrap().join("beam_patcher").is_dir()
+            || first != second);
+        std::fs::remove_dir_all(first).unwrap();
+        std::fs::remove_dir_all(second).unwrap();
     }
 
     #[test]
