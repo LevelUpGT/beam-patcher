@@ -1,7 +1,7 @@
 # File Path: /.github/workflows/thor-safety.yml
 # Purpose: Build and test THOR parsing/GRF safety patches before merge
 # Module: CI - GitHub Actions YAML
-# Version: 1.4.0
+# Version: 1.5.0
 # Description: Produce isolated SHA-verified Windows THOR tester after real-fixture acceptance
 # Dependency Layer: Tool
 
@@ -20,6 +20,10 @@ on:
       - "beam-core/**"
       - ".github/workflows/thor-safety.yml"
   workflow_dispatch:
+
+concurrency:
+  group: BEAM-THOR-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
