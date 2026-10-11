@@ -1,7 +1,7 @@
 # File Path: /.github/workflows/thor-safety.yml
 # Purpose: Build and test THOR parsing/GRF safety patches before merge
 # Module: CI - GitHub Actions YAML
-# Version: 1.5.0
+# Version: 1.5.1
 # Description: Produce isolated SHA-verified Windows THOR tester after real-fixture acceptance
 # Dependency Layer: Tool
 
@@ -114,8 +114,12 @@ jobs:
           $bin = Join-Path $env:GITHUB_WORKSPACE "target\release\examples\thor_smoke.exe"
           & "$bin" "$path" "e18d5368f44feaa1569c1b2f7893b4d51167bd6bb03ab93e4d6ae108a147b2c8"
           if ($LASTEXITCODE -ne 0) { throw "Standalone sandbox EXE failed real Hybrid THOR test" }
-          & "$bin" "$path" "0000000000000000000000000000000000000000000000000000000000000000"
-          if ($LASTEXITCODE -eq 0) { throw "Sandbox EXE accepted an incorrect digest" }
+          # A nonzero exit code is EXPECTED here; run as a child process so
+          # PowerShell's native-command error policy does not abort this step.
+          $badDigest = "0000000000000000000000000000000000000000000000000000000000000000"
+          $negative = Start-Process -FilePath "$bin" -ArgumentList @("`"$path`"", $badDigest) -Wait -PassThru -NoNewWindow
+          if ($negative.ExitCode -eq 0) { throw "Sandbox EXE accepted an incorrect digest" }
+          Write-Host "PASS: Incorrect SHA-256 rejected with exit code $($negative.ExitCode)"
 
       - name: Package isolated test executable with its checksum
         shell: pwsh
