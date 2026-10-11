@@ -1,18 +1,20 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/src/main.rs
 // 📌 Amac: BEAM Windows GUI onizleme controller komutlari ve guvenli branch sorgulari
 // 📌 Modul - Rust
-// Version: 0.4.0
-// Aciklama: Imzali zarf dogrulama komutu, guvenilir anahtar yoksa kesin ret
+// Version: 0.5.0
+// Aciklama: Deneysel laboratuvar planini yalnizca Service uzerinden olusturur; kurulum kapali
 // Bagimli Oldugu Katman: Controller | Service | Tool | View | Language
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod config {
     pub mod branch_visibility;
     pub mod client_profiles;
+    pub mod experiment_lab;
     pub mod trusted_signers;
 }
 mod services {
     pub mod branch_filter;
+    pub mod experiment_lab;
     pub mod manifest_preflight;
     pub mod signed_manifest;
 }
@@ -213,6 +215,16 @@ async fn preview_check_signed_manifest(
     .map_err(|_| "Imzali manifest kontrol islemi tamamlanamadi.".to_string())?
 }
 
+#[tauri::command]
+fn preview_experiment_plan(
+    profile: String,
+    project: String,
+    branch: String,
+    sha: String,
+) -> Result<services::experiment_lab::ExperimentPlan, String> {
+    services::experiment_lab::build(&profile, &project, &branch, &sha)
+}
+
 #[cfg(test)]
 mod branch_profiles_tests {
     use super::*;
@@ -284,7 +296,8 @@ fn main() {
             preview_verify_thor,
             preview_list_branches,
             preview_check_manifest,
-            preview_check_signed_manifest
+            preview_check_signed_manifest,
+            preview_experiment_plan
         ])
         .run(tauri::generate_context!())
         .expect("Unable to open isolated BEAM GUI Preview window");
