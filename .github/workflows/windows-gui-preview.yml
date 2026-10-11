@@ -1,7 +1,7 @@
 # File Path: /.github/workflows/windows-gui-preview.yml
 # Purpose: Build and smoke-check graphical BEAM desktop launcher on hosted Windows
 # Module: CI - Windows
-# Version: 1.0.0
+# Version: 1.1.0
 # Description: Compile actual Tauri window; test-only artifact, no live game install
 # Dependency Layer: Tool
 name: Windows GUI Preview
@@ -37,22 +37,22 @@ jobs:
       - name: Compile desktop GUI from actual BEAM app
         shell: pwsh
         run: |
-          cargo build --release --package beam-patcher
+          cargo build --release --package beam-patcher --bin BEAM-Patcher-Preview
           if ($LASTEXITCODE -ne 0) { throw "BEAM Tauri desktop GUI build failed" }
       - name: Validate compiled Windows PE
         shell: pwsh
         run: |
-          $exe = "target/release/beam-patcher.exe"
+          $exe = "target/release/BEAM-Patcher-Preview.exe"
           if (-not (Test-Path $exe)) { throw "Desktop EXE missing" }
           $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           Write-Host "GUI_EXE_SHA256=$hash"
           New-Item -Force -ItemType Directory "gui-preview-package" | Out-Null
           Copy-Item $exe "gui-preview-package/"
-          Set-Content -Path "gui-preview-package/beam-patcher.exe.sha256" -Value "$hash  beam-patcher.exe" -Encoding ascii
+          Set-Content -Path "gui-preview-package/BEAM-Patcher-Preview.exe.sha256" -Value "$hash  BEAM-Patcher-Preview.exe" -Encoding ascii
       - name: Upload diagnostic GUI binary, no game assets
         uses: actions/upload-artifact@v4
         with:
-          name: beam-windows-gui-preview
+          name: BEAM-Patcher-Windows-GUI-Preview
           path: gui-preview-package/
           if-no-files-found: error
           retention-days: 7

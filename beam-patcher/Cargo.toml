@@ -20,3 +20,8 @@ clap = { version = "4.4", features = ["derive"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
+
+# Dedicated graphical preview; no config.yml or game installation touched.
+[[bin]]
+name = "BEAM-Patcher-Preview"
+path = "src/preview.rs"

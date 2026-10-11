@@ -1,3 +1,5 @@
+mod preview;
+pub use preview::run_preview;
 mod commands;
 
 use anyhow::Result;
