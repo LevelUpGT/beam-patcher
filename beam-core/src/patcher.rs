@@ -496,6 +496,16 @@ impl Patcher {
             .download_file_with_progress(&patch.filename, &patch_path, progress_callback)
             .await?;
 
+        // Reject a short or oversized download before archive parsing or disk writes.
+        if let Some(expected) = patch.size {
+            let actual = tokio::fs::metadata(&patch_path).await?.len();
+            if actual != expected {
+                return Err(Error::PatchFailed(format!(
+                    "Patch '{}' size mismatch: got {}, expected {}",
+                    patch.filename, actual, expected
+                )));
+            }
+        }
         if let Some(checksum) = &patch.checksum {
             if !self.downloader.verify_checksum(&patch_path, checksum).await? {
                 return Err(Error::PatchFailed(format!(
@@ -557,6 +567,16 @@ impl Patcher {
                     },
                 )
                 .await?;
+
+            if let Some(expected) = patch.size {
+                let actual = tokio::fs::metadata(&patch_path).await?.len();
+                if actual != expected {
+                    return Err(Error::PatchFailed(format!(
+                        "Patch '{}' size mismatch: got {}, expected {}",
+                        patch.filename, actual, expected
+                    )));
+                }
+            }
 
             if let Some(checksum) = &patch.checksum {
                 if !self.downloader.verify_checksum(&patch_path, checksum).await? {
