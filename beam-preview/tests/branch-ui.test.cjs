@@ -1,8 +1,8 @@
 // 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/tests/branch-ui.test.cjs
 // 📌 Amac: GUI branch listesi secimini ag baglantisi olmadan dogrulamak
 // 📌 Modul - JavaScript Test
-// Version: 0.3.0
-// Aciklama: Varsayilan ve gelismis gorunumu, eski yanitlari ve branch kimligini dogrula
+// Version: 0.3.1
+// Aciklama: Branch kimligi, manifest on-kontrol ve eski yanitlari dogrula
 // Bagimli Oldugu Katman: Tool | View | Language
 
 "use strict";
@@ -57,7 +57,7 @@ class FakeElement {
   }
 }
 
-function boot(invoke) {
+function boot(invoke, dialogPath = null) {
   const ids = ["result", "test", "details", "quit", "clientProfile", "sourceProject",
     "branchList", "branchSha", "branchNote", "loadBranches", "showAllBranches", "checkManifest", "manifestNote"];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
@@ -67,7 +67,7 @@ function boot(invoke) {
   const document = { getElementById: (id) => elements[id] };
   const context = {
     document,
-    window: { __TAURI__: { tauri: { invoke }, dialog: { open: async () => null } } },
+    window: { __TAURI__: { tauri: { invoke }, dialog: { open: async () => dialogPath } } },
     Option: class {
       constructor(text, value) { this.text = text; this.value = value; }
     },
@@ -165,4 +165,67 @@ test("API failures are reported for the currently selected public source", async
   await fire("loadBranches", "click");
   assert.match(elements.branchNote.textContent, /Branch listesi alınamadı: Error: HTTP 403/);
   assert.equal(elements.branchList.options[0].value, "");
+});
+
+
+test("manifest preflight sends pinned profile, repository branch and full SHA", async () => {
+  const calls = [];
+  const { elements, fire } = boot(async (command, params) => {
+    if (command === "preview_list_branches") {
+      return [{ name: "translation/tr", sha: SHA, short_sha: SHA.slice(0, 12), protected: false }];
+    }
+    if (command === "preview_check_manifest") {
+      calls.push(params);
+      return { status: "PREVIEW_ONLY_UNSIGNED", metadata_matches: true,
+        profile: "hybrid-2022", engine: "rpatchur", channel: "beta",
+        package_bytes_verified: false, signature_verified: false,
+        installation_allowed: false };
+    }
+    throw new Error("Unexpected test command");
+  }, "C:/test/manifest.json");
+
+  await fire("loadBranches", "click");
+  await fire("checkManifest", "click");
+  assert.equal(calls.length, 1);
+  assert.deepEqual({ ...calls[0] }, {
+    path: "C:/test/manifest.json", profile: "hybrid-2022",
+    project: "translation", branch: "translation/tr", sha: SHA
+  });
+  assert.match(elements.manifestNote.textContent, /IMZA ve PAKET DOGRULANMADI/);
+  assert.match(elements.manifestNote.textContent, /KAPALI/);
+});
+
+test("manifest check cannot run without an inspected GitHub branch", async () => {
+  const { elements, fire } = boot(async () => { throw new Error("should not call backend"); },
+    "C:/test/manifest.json");
+  await fire("checkManifest", "click");
+  assert.match(elements.manifestNote.textContent, /Once GitHub deposunu/);
+});
+
+test("stale manifest results are discarded if selection changes", async () => {
+  let completeManifest;
+  const { elements, fire } = boot(async (command) => {
+    if (command === "preview_list_branches") {
+      return [
+        { name: "master", sha: SHA, short_sha: SHA.slice(0, 12), protected: false },
+        { name: "translation/tr", sha: SHA, short_sha: SHA.slice(0, 12), protected: false }
+      ];
+    }
+    if (command === "preview_check_manifest") {
+      return new Promise(resolve => { completeManifest = resolve; });
+    }
+    throw new Error("Unexpected test command");
+  }, "C:/test/manifest.json");
+
+  await fire("loadBranches", "click");
+  const pending = fire("checkManifest", "click");
+  // Advance microtask so the file picker resolves before the request starts.
+  await Promise.resolve();
+  elements.branchList.value = "translation/tr";
+  fire("branchList", "change");
+  if (completeManifest) completeManifest({ metadata_matches: true,
+    profile: "hybrid-2022", engine: "rpatchur", channel: "beta" });
+  await pending;
+  assert.match(elements.manifestNote.textContent, /Secim degisti/);
+  assert.doesNotMatch(elements.manifestNote.textContent, /Metadata eslesti/);
 });
