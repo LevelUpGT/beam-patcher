@@ -1,13 +1,17 @@
-// File Path: /beam-preview/src/main.rs
-// Purpose: Isolated graphical BEAM preview (never opens the legacy Tauri web UI)
-// Module: BEAM Desktop - Rust/Tauri
-// Version: 0.1.0
-// Description: Read-only launcher preview plus temporary THOR sandbox verification
-// Dependency Layer: UI
+// 📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/src/main.rs
+// 📌 Amac: BEAM Windows GUI onizleme controller komutlari ve guvenli branch sorgulari
+// 📌 Modul - Rust
+// Version: 0.2.1
+// Aciklama: HTTPS cevap boyutunu sinirla, yonlendirmeleri reddet, branch yanitini dogrula
+// Bagimli Oldugu Katman: Controller | Service | Tool | View | Language
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
 use std::path::Path;
+use std::collections::HashSet;
+
+const MAX_BRANCH_RESPONSE_BYTES: usize = 256 * 1024;
+const GITHUB_BRANCH_QUERY_TIMEOUT_SECS: u64 = 12;
 
 #[derive(Serialize)]
 struct PreviewStatus {
@@ -93,12 +97,13 @@ fn public_branch_source(project: &str) -> Result<&'static str, &'static str> {
 }
 
 fn parse_github_branches(bytes: &[u8]) -> Result<Vec<BranchSummary>, String> {
-    if bytes.len() > 256 * 1024 {
+    if bytes.len() > MAX_BRANCH_RESPONSE_BYTES {
         return Err("GitHub yaniti beklenenden buyuk.".to_string());
     }
     let branches: Vec<GithubBranch> = serde_json::from_slice(bytes)
         .map_err(|e| format!("GitHub branch yaniti okunamadi: {e}"))?;
     let mut items = Vec::with_capacity(branches.len());
+    let mut names = HashSet::with_capacity(branches.len());
     for branch in branches {
         let valid_name = !branch.name.is_empty()
             && branch.name.len() <= 255
@@ -107,6 +112,9 @@ fn parse_github_branches(bytes: &[u8]) -> Result<Vec<BranchSummary>, String> {
             || !branch.commit.sha.bytes().all(|b| b.is_ascii_hexdigit())
         {
             return Err("GitHub branch ismi veya SHA gecersiz.".to_string());
+        }
+        if !names.insert(branch.name.clone()) {
+            return Err("GitHub yanitinda tekrarlanan branch adi var.".to_string());
         }
         items.push(BranchSummary {
             name: branch.name,
@@ -125,10 +133,11 @@ async fn preview_list_branches(project: String) -> Result<Vec<BranchSummary>, St
     // The GitHub API response is used for display only.
     let url = format!("https://api.github.com/repos/{repo}/branches?per_page=100");
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(12))
+        .timeout(std::time::Duration::from_secs(GITHUB_BRANCH_QUERY_TIMEOUT_SECS))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("HTTPS istemcisi hazirlanamadi: {e}"))?;
-    let response = client
+    let mut response = client
         .get(&url)
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .header(reqwest::header::USER_AGENT, "LevelUpGT-BEAM-GUI-Preview/0.2")
@@ -137,9 +146,19 @@ async fn preview_list_branches(project: String) -> Result<Vec<BranchSummary>, St
         .map_err(|e| format!("GitHub ulasilamadi: {e}"))?
         .error_for_status()
         .map_err(|e| format!("GitHub branch sorgusu reddedildi: {e}"))?;
-    let bytes = response.bytes().await
-        .map_err(|e| format!("GitHub yaniti okunamadi: {e}"))?;
-    parse_github_branches(bytes.as_ref())
+    if response.content_length().is_some_and(|size| size > MAX_BRANCH_RESPONSE_BYTES as u64) {
+        return Err("GitHub yaniti beklenenden buyuk.".to_string());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await
+        .map_err(|e| format!("GitHub yaniti okunamadi: {e}"))?
+    {
+        if chunk.len() > MAX_BRANCH_RESPONSE_BYTES.saturating_sub(bytes.len()) {
+            return Err("GitHub yaniti beklenenden buyuk.".to_string());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    parse_github_branches(&bytes)
 }
 
 #[cfg(test)]
@@ -153,6 +172,22 @@ mod branch_profiles_tests {
         assert!(public_branch_source("client").is_err());
         assert!(public_branch_source("../../user/unsafe").is_err());
         assert!(public_branch_source("https://evil.example").is_err());
+    }
+
+    #[test]
+    fn keeps_distinct_branch_names_when_commits_match() {
+        let sample = br#"[{"name":"master","commit":{"sha":"af2191234a22e180fac62d179489b64f3d17a997"}},{"name":"archive/tr-2025-10-25","commit":{"sha":"af2191234a22e180fac62d179489b64f3d17a997"}}]"#;
+        let branches = parse_github_branches(sample).unwrap();
+        assert_eq!(branches.len(), 2);
+        assert_ne!(branches[0].name, branches[1].name);
+        assert_eq!(branches[0].sha, branches[1].sha);
+    }
+
+    #[test]
+    fn rejects_duplicate_branch_names_and_oversized_payload() {
+        let sample = br#"[{"name":"master","commit":{"sha":"af2191234a22e180fac62d179489b64f3d17a997"}},{"name":"master","commit":{"sha":"af2191234a22e180fac62d179489b64f3d17a997"}}]"#;
+        assert!(parse_github_branches(sample).is_err());
+        assert!(parse_github_branches(&vec![b'x'; MAX_BRANCH_RESPONSE_BYTES + 1]).is_err());
     }
 
     #[test]

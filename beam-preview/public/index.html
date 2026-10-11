@@ -1,4 +1,12 @@
 <!doctype html>
+<!--
+📄 Dosya Yolu: /LevelUpGT/beam-patcher/beam-preview/public/index.html
+📌 Amac: BEAM onizleme istemci profili ve salt okunur branch secim arayuzu
+📌 Modul - HTML
+Version: 0.2.1
+Aciklama: Ayni commit'i gosteren branch'leri dogru ayirt et; eski istekleri ele
+Bagimli Oldugu Katman: View
+-->
 <html lang="tr">
 <head>
   <meta charset="utf-8">
@@ -117,6 +125,7 @@
   const branchMessage=document.getElementById("branchNote");
   const loadBranches=document.getElementById("loadBranches");
   let visibleBranches=[];
+  let branchRequestVersion=0;
   // This is a READ-ONLY branch inspector. No updates, downloads or disk writes.
   const resetBranches=()=>{
     visibleBranches=[];
@@ -128,15 +137,16 @@
       ". Gerçek güncelleme sistemi değiştirilmedi.";
   });
   projectInput.addEventListener("change",()=>{
+    branchRequestVersion+=1;
     resetBranches();
     branchMessage.textContent=projectInput.value==="client"
       ? "RagnarokClient özel repo: branch listesi için güvenli yetkilendirme gerekli."
       : "Yeni kaynak deposu seçildi; dalları tekrar yükle.";
   });
   branchInput.addEventListener("change",()=>{
-    const selected=visibleBranches.find(b=>b.sha===branchInput.value);
+    const selected=visibleBranches.find(b=>b.name===branchInput.value);
     branchInfo.textContent=selected
-      ? "Seçili dal: "+selected.name+" · commit "+selected.short_sha+
+      ? "Seçili dal: "+selected.name+" · commit "+selected.sha+
         (selected.protected?" · korumalı dal":"")
       : "";
     if(selected){
@@ -147,12 +157,13 @@
   loadBranches.addEventListener("click",async ()=>{
     if(!invoke){branchMessage.textContent="GitHub erişimi için Windows BEAM uygulaması gerekli.";return;}
     const project=projectInput.value;
+    const requestVersion=++branchRequestVersion;
     resetBranches();
     loadBranches.disabled=true;
     branchMessage.textContent="GitHub branch listesi okunuyor...";
     try{
       const branches=await invoke("preview_list_branches",{project});
-      if(projectInput.value!==project)return;
+      if(projectInput.value!==project || requestVersion!==branchRequestVersion)return;
       visibleBranches=Array.isArray(branches)?branches:[];
       branchInput.replaceChildren();
       if(!visibleBranches.length){
@@ -161,12 +172,16 @@
         return;
       }
       for(const branch of visibleBranches){
-        branchInput.add(new Option(branch.name+" · "+branch.short_sha,branch.sha));
+        branchInput.add(new Option(branch.name+" · "+branch.short_sha,branch.name));
       }
       branchInput.selectedIndex=0;
       branchInput.dispatchEvent(new Event("change"));
       branchMessage.textContent=visibleBranches.length+" branch bulundu. Bu liste indirme veya kurulum başlatmaz.";
-    }catch(e){branchMessage.textContent="Branch listesi alınamadı: "+String(e);}
+    }catch(e){
+      if(projectInput.value===project && requestVersion===branchRequestVersion){
+        branchMessage.textContent="Branch listesi alınamadı: "+String(e);
+      }
+    }
     finally{loadBranches.disabled=false;}
   });
 

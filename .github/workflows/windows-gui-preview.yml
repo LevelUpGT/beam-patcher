@@ -1,8 +1,8 @@
 # 📄 Dosya Yolu: /LevelUpGT/beam-patcher/.github/workflows/windows-gui-preview.yml
 # 📌 Amac: Windows BEAM GUI onizlemesini ve bagimli Rust kutuphanelerini test etmek
 # 📌 Modul - YAML
-# Version: 1.4.1
-# Aciklama: GUI derlemesini bagimlilik degisikliklerinde de calistir; oyun kurulumunu kapali tut
+# Version: 1.4.2
+# Aciklama: Bagimlilik testlerine ve GUI branch secim kontratina gore derleme yap
 # Bagimli Oldugu Katman: Tool
 name: Windows GUI Preview
 
@@ -40,6 +40,15 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: beam-gui-tauri-v1
+      - name: Install Node.js for offline GUI contract tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify branch UI identity and stale-response safety
+        shell: pwsh
+        run: |
+          node --test beam-preview/tests/branch-ui.test.cjs
+          if ($LASTEXITCODE -ne 0) { throw "BEAM branch selector contract tests failed" }
       - name: Test readonly GitHub branch profile safety
         shell: pwsh
         run: |
