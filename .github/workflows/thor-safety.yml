@@ -1,7 +1,7 @@
 # File Path: /.github/workflows/thor-safety.yml
 # Purpose: Build and test THOR parsing/GRF safety patches before merge
 # Module: CI - GitHub Actions YAML
-# Version: 1.2.0
+# Version: 1.3.0
 # Description: Exercise pinned real Hybrid THOR, hosted Windows and FURY-GAMES safety checks
 # Dependency Layer: Tool
 
@@ -82,6 +82,20 @@ jobs:
         run: |
           cargo test -p beam-core --lib
           if ($LASTEXITCODE -ne 0) { throw "Client transaction and recovery tests failed" }
+
+      - name: Verify and apply pinned Hybrid THOR on Windows test filesystem
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:RUNNER_TEMP "turkuaz-hybrid-2022.thor"
+          curl.exe --fail --location --retry 3 --retry-delay 3 --output "$path" "https://github.com/b1glord/ROenglishRE/releases/download/rpatchur-2022-hybrid-test/turkuaz-2022-hybrid-8cfc3211f8eb.thor"
+          if ($LASTEXITCODE -ne 0) { throw "Hybrid THOR download failed" }
+          $expected = "e18d5368f44feaa1569c1b2f7893b4d51167bd6bb03ab93e4d6ae108a147b2c8"
+          $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw "Hybrid THOR SHA256 mismatch" }
+          $env:BEAM_REAL_HYBRID_THOR = $path
+          cargo test -p beam-core --lib real_roenglishre_2022_hybrid_thor_installs_in_disposable_directory -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw "Real 2022 Hybrid THOR Windows application failed" }
 
   test-thor-windows:
     name: FURY Windows THOR installer smoke
