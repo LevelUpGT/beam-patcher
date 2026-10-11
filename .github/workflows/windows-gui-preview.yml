@@ -1,7 +1,7 @@
 # File Path: /.github/workflows/windows-gui-preview.yml
 # Purpose: Build and smoke-check graphical BEAM desktop launcher on hosted Windows
 # Module: CI - Windows
-# Version: 1.3.0
+# Version: 1.3.1
 # Description: Compile actual Tauri window; test-only artifact, no live game install
 # Dependency Layer: Tool
 name: Windows GUI Preview
@@ -11,6 +11,7 @@ on:
     paths:
       - "beam-ui/**"
       - "beam-patcher/**"
+      - "beam-preview/**"
       - ".github/workflows/windows-gui-preview.yml"
   workflow_dispatch:
 
