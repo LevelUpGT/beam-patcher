@@ -5,6 +5,28 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
 
+
+fn validate_thor_destination(thor: &Thor, configured_grf: &str) -> Result<()> {
+    if !thor.use_grf_merging {
+        // Do not mistake a loose-file translation pack for GRF data.
+        return Err(Error::PatchFailed(
+            "THOR requires loose client file installation. \
+             BEAM's transaction-safe client writer is not yet available; \
+             use rPatchur for the Hybrid test channel."
+                .to_string(),
+        ));
+    }
+    if let Some(target) = &thor.target_grf_name {
+        if !target.eq_ignore_ascii_case(configured_grf) {
+            return Err(Error::PatchFailed(format!(
+                "THOR target GRF '{}' does not match configured '{}'",
+                target, configured_grf
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub struct Patcher {
     config: Config,
     downloader: Downloader,
@@ -225,6 +247,8 @@ impl Patcher {
     fn apply_thor_into(&self, patch_path: &Path, grf: &mut Grf) -> Result<()> {
         let thor = Thor::open(patch_path)?;
 
+        validate_thor_destination(&thor, &self.config.patcher.target_grf)?;
+
         for entry in thor.get_entries() {
             match entry {
                 beam_formats::thor::ThorEntry::Add { filename, data } => {
@@ -298,5 +322,28 @@ impl Patcher {
             info!("GRF not found, creating new: {:?}", path);
             Ok(Grf::create_new(path)?)
         }
+    }
+}
+
+
+#[cfg(test)]
+mod thor_guards_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_loose_client_thor_before_grf_write() {
+        let mut archive = Thor::new();
+        archive.add_file("SystemEN/LuaFiles514/itemInfo.lua", b"translation");
+        assert!(!archive.use_grf_merging);
+        assert!(validate_thor_destination(&archive, "ragnardata.grf").is_err());
+    }
+
+    #[test]
+    fn validates_header_target_against_selected_grf() {
+        let mut archive = Thor::new();
+        archive.use_grf_merging = true;
+        archive.target_grf_name = Some("ragnardata.grf".to_string());
+        assert!(validate_thor_destination(&archive, "ragnardata.grf").is_ok());
+        assert!(validate_thor_destination(&archive, "data.grf").is_err());
     }
 }
