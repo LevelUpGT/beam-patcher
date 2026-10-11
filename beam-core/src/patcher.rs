@@ -807,6 +807,61 @@ mod thor_guards_tests {
 
 
 
+
+    /// End-to-end fixture supplied by CI from a pinned official release asset.
+    /// No Ragnarok installation, GRF, network or launcher is touched by this test.
+    #[test]
+    fn real_roenglishre_2022_hybrid_thor_installs_in_disposable_directory() {
+        let path = match std::env::var("BEAM_REAL_HYBRID_THOR") {
+            Ok(path) => path,
+            Err(_) => {
+                eprintln!("SKIPPED: no pinned Hybrid THOR fixture provided");
+                return;
+            }
+        };
+        let archive = Thor::open(path).expect("decode published 2022 Hybrid THOR");
+        assert!(!archive.use_grf_merging, "Hybrid THOR must not target a GRF");
+        assert!(archive.target_grf_name.is_none(), "Hybrid THOR must not specify a GRF");
+        assert!(!archive.entries.is_empty(), "Hybrid THOR cannot be empty");
+        let file_paths: Vec<_> = archive.entries.iter().filter_map(|entry| match entry {
+            ThorEntry::Add { filename, .. } => Some(filename.as_str()),
+            ThorEntry::Remove { .. } => None,
+        }).collect();
+        assert!(
+            file_paths.iter().any(|filename| filename.starts_with("SystemEN/") ||
+                filename.starts_with("SystemEN\\")),
+            "Hybrid fixture must contain SystemEN translation files"
+        );
+        assert!(
+            file_paths.iter().any(|filename| filename.starts_with("data/") ||
+                filename.starts_with("data\\")),
+            "Hybrid fixture must contain data translation files"
+        );
+
+        let root = std::env::temp_dir().join(format!(
+            "beam-hybrid-live-fixture-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                .unwrap().as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        apply_loose_thors(&root, &[archive]).expect("apply real Hybrid THOR to empty test root");
+        assert!(!root.join("ragnardata.grf").exists(), "GRF must remain untouched");
+        let mut checked = 0;
+        for entry in Thor::open(std::env::var("BEAM_REAL_HYBRID_THOR").unwrap())
+            .unwrap().entries.iter()
+        {
+            if let ThorEntry::Add { filename, data } = entry {
+                let target = root.join(filename.replace('\\', "/"));
+                assert_eq!(std::fs::read(&target).expect("installed client file"), *data);
+                checked += 1;
+            }
+        }
+        assert!(checked > 0, "at least one installed file must be compared");
+        std::fs::remove_dir_all(root).expect("cleanup disposable fixture root");
+        eprintln!("Hybrid THOR loose-client fixture: verified {checked} files");
+    }
+
     #[test]
     fn client_lock_rejects_parallel_updaters() {
         let root = std::env::temp_dir().join(format!(
