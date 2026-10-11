@@ -269,10 +269,8 @@ impl Downloader {
     }
 
     pub async fn verify_checksum(&self, file_path: &Path, expected: &str) -> Result<bool> {
-        if !self.config.patcher.verify_checksums {
-            return Ok(true);
-        }
-
+        // When a manifest supplies a digest it must always be verified,
+        // even if the administrator allows older digest-less feeds.
         // Streaming hash — avoids loading the entire patch (potentially GBs) into RAM.
         let mut file = File::open(file_path).await?;
         let mut hasher = Sha256::new();
@@ -381,6 +379,56 @@ fn tmp_path_for(destination: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    #[test]
+    fn parses_real_rpatchur_indexed_manifest_in_order() {
+        let patches = Downloader::parse_patch_list(
+            "// old disabled patch\n\
+             10002 turkuaz-2022-hybrid-f45e97b320f6.thor\n\
+             10021 turkuaz-2022-hybrid-8cfc3211f8eb.thor\n"
+        ).unwrap();
+        assert_eq!(patches.len(), 2);
+        assert_eq!(patches[0].filename, "turkuaz-2022-hybrid-f45e97b320f6.thor");
+        assert_eq!(patches[1].filename, "turkuaz-2022-hybrid-8cfc3211f8eb.thor");
+        assert!(patches[0].checksum.is_none());
+    }
+
+    #[test]
+    fn parses_indexed_manifest_with_verified_sha256_and_size() {
+        let digest = "e18d5368f44feaa1569c1b2f7893b4d51167bd6bb03ab93e4d6ae108a147b2c8";
+        let manifest = format!("10001 hybrid.thor {digest} 3625083\n");
+        let patches = Downloader::parse_patch_list(&manifest).unwrap();
+        assert_eq!(patches[0].checksum.as_deref(), Some(digest));
+        assert_eq!(patches[0].size, Some(3625083));
+    }
+
+    #[test]
+    fn refuses_malicious_patch_manifest_rows() {
+        for bad in [
+            "10003 ../escape.thor",
+            "10003 C:\\evil.thor",
+            "10003 good.thor\n10003 new.thor",
+            "10004 first.thor\n10003 earlier.thor",
+            "10003 first.thor\nfirst2.thor",
+            "10001 nice.thor abcdef",
+            "10001 nice.thor e18d5368f44feaa1569c1b2f7893b4d51167bd6bb03ab93e4d6ae108a147b2c8 0",
+            "10001 foo.txt",
+            "10001 one.thor\n10002 ONE.thor",
+        ] {
+            assert!(Downloader::parse_patch_list(bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn accepts_native_beam_sha256_manifests() {
+        let digest = "e18d5368f44feaa1569c1b2f7893b4d51167bd6bb03ab93e4d6ae108a147b2c8";
+        let patches = Downloader::parse_patch_list(&format!("one.beam {digest} 10"))
+            .unwrap();
+        assert_eq!(patches[0].filename, "one.beam");
+        assert_eq!(patches[0].size, Some(10));
+        assert_eq!(patches[0].checksum.as_deref(), Some(digest));
+    }
 
     #[test]
     fn tmp_path_appends_part_extension() {
