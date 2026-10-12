@@ -230,11 +230,13 @@ mod tests {
             std::fs::write(&patch_path, b"different-region-data").unwrap();
             assert!(guard.validate_file(&patch_path).is_err());
 
-            let policy = config.patcher.compatibility_guard.as_mut().unwrap();
-            policy.channel = "sakray".to_owned();
+            config.patcher.compatibility_guard.as_mut().unwrap().channel =
+                "sakray".to_owned();
             assert!(PatchCompatibilityGuard::new(&config).is_err());
-            policy.channel = "custom".to_owned();
-            policy.client_exe_sha256 = "a".repeat(64);
+            config.patcher.compatibility_guard.as_mut().unwrap().channel =
+                "custom".to_owned();
+            config.patcher.compatibility_guard.as_mut().unwrap().client_exe_sha256 =
+                "a".repeat(64);
             assert!(PatchCompatibilityGuard::new(&config).is_err());
             Ok::<(), Box<dyn std::error::Error>>(())
         })();
