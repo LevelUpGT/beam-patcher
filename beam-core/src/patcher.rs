@@ -1,5 +1,6 @@
 use crate::{Config, Downloader, Error, Result};
 use crate::downloader::PatchInfo;
+use crate::patch_guard::PatchCompatibilityGuard;
 use beam_formats::{grf::Grf, gpf::Gpf, rgz::Rgz, thor::Thor, beam::BeamArchive};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -31,10 +32,13 @@ pub struct Patcher {
     config: Config,
     downloader: Downloader,
     temp_dir: PathBuf,
+    compatibility_guard: Option<PatchCompatibilityGuard>,
 }
 
 impl Patcher {
     pub fn new(config: Config) -> Result<Self> {
+        // Validate the protected client identity before downloader or temp writes.
+        let compatibility_guard = PatchCompatibilityGuard::new(&config)?;
         let downloader = Downloader::new(config.clone())?;
         let temp_dir = std::env::temp_dir().join("beam_patcher");
         std::fs::create_dir_all(&temp_dir)?;
@@ -43,6 +47,7 @@ impl Patcher {
             config,
             downloader,
             temp_dir,
+            compatibility_guard,
         })
     }
 
@@ -77,6 +82,9 @@ impl Patcher {
     where
         F: FnMut(u64, u64) + Send + 'static,
     {
+        if let Some(guard) = &self.compatibility_guard {
+            guard.validate_name(&patch.filename)?;
+        }
         let patch_path = self.temp_dir.join(&patch.filename);
 
         self.downloader
@@ -115,6 +123,12 @@ impl Patcher {
     {
         if patches.is_empty() {
             return Ok(());
+        }
+        // Validate the complete batch before any download or GRF write.
+        if let Some(guard) = &self.compatibility_guard {
+            for patch in patches {
+                guard.validate_name(&patch.filename)?;
+            }
         }
 
         let grf_path = self.get_grf_path()?;
@@ -188,6 +202,9 @@ impl Patcher {
 
     /// One-shot apply: opens its own GRF, applies, saves.
     pub async fn apply_patch(&self, patch_path: &Path) -> Result<()> {
+        if let Some(guard) = &self.compatibility_guard {
+            guard.validate_file(patch_path)?;
+        }
         let grf_path = self.get_grf_path()?;
         let mut grf = self.open_or_create_grf(&grf_path)?;
         self.apply_patch_into_grf(patch_path, &mut grf).await?;
@@ -197,6 +214,9 @@ impl Patcher {
 
     /// Internal: stage the patch contents into a caller-owned GRF without saving.
     async fn apply_patch_into_grf(&self, patch_path: &Path, grf: &mut Grf) -> Result<()> {
+        if let Some(guard) = &self.compatibility_guard {
+            guard.validate_file(patch_path)?;
+        }
         let extension = patch_path
             .extension()
             .and_then(|s| s.to_str())
