@@ -189,6 +189,60 @@ mod tests {
     }
 
     #[test]
+    fn guarded_deployment_checks_exe_channel_and_patch_bytes() {
+        use crate::config::CompatibilityGuardConfig;
+        let test_dir = std::env::temp_dir()
+            .join(format!("beam-region-test-{}-{}", std::process::id(), std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir_all(&test_dir).unwrap();
+        let result = (|| {
+            let exe_path = test_dir.join("game.exe");
+            let patch_path = test_dir.join("custom.thor");
+            std::fs::write(&exe_path, b"verified-binary").unwrap();
+            std::fs::write(&patch_path, b"verified-patch").unwrap();
+            let exe_digest = digest(&exe_path).unwrap();
+            let patch_digest = digest(&patch_path).unwrap();
+            let json = serde_json::json!({
+                "schema": "levelupgt.beam-regional-patch-manifest.v1",
+                "profile_id": "levelupgt-custom-20220406",
+                "region": "levelupgt",
+                "channel": "custom",
+                "client_exe_sha256": exe_digest,
+                "target_grf": "ragnardata.grf",
+                "patches": [{"filename":"custom.thor","sha256":patch_digest}]
+            });
+            std::fs::write(test_dir.join("regional-patches.json"), json.to_string()).unwrap();
+
+            let mut config = Config::default();
+            config.app.game_directory = Some(test_dir.to_string_lossy().into_owned());
+            config.app.client_exe = "game.exe".to_owned();
+            config.patcher.target_grf = "ragnardata.grf".to_owned();
+            config.patcher.compatibility_guard = Some(CompatibilityGuardConfig {
+                profile_id: "levelupgt-custom-20220406".to_owned(),
+                region: "levelupgt".to_owned(),
+                channel: "custom".to_owned(),
+                client_exe_sha256: exe_digest.clone(),
+                manifest_file: "regional-patches.json".to_owned(),
+            });
+            let guard = PatchCompatibilityGuard::new(&config).unwrap().unwrap();
+            assert!(guard.validate_name("custom.thor").is_ok());
+            assert!(guard.validate_file(&patch_path).is_ok());
+            std::fs::write(&patch_path, b"different-region-data").unwrap();
+            assert!(guard.validate_file(&patch_path).is_err());
+
+            let policy = config.patcher.compatibility_guard.as_mut().unwrap();
+            policy.channel = "sakray".to_owned();
+            assert!(PatchCompatibilityGuard::new(&config).is_err());
+            policy.channel = "custom".to_owned();
+            policy.client_exe_sha256 = "a".repeat(64);
+            assert!(PatchCompatibilityGuard::new(&config).is_err());
+            Ok::<(), Box<dyn std::error::Error>>(())
+        })();
+        let _ = std::fs::remove_dir_all(&test_dir);
+        result.unwrap();
+    }
+
+    #[test]
     fn hash_syntax_requires_full_256_bit_digest() {
         assert!(!valid_sha256("abcd"));
         assert!(valid_sha256(&"a".repeat(64)));
