@@ -41,3 +41,5 @@ jobs:
         run: cargo test -p beam-formats --lib grf::tests -- --nocapture
       - name: Compile Rust Beam v1 offline byte verifier
         run: cargo check -p beam-formats --example verify_local_beam
+      - name: Run real Rust BeamArchive v1 source/alias and no-client regression fixtures
+        run: cargo test -p beam-formats --example verify_local_beam -- --nocapture
