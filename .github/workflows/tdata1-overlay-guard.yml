@@ -12,6 +12,8 @@ on:
       - 'beam-core/src/grf_layer_guard.rs'
       - 'beam-core/src/lib.rs'
       - 'beam-core/src/patcher.rs'
+      - 'beam-formats/src/grf.rs'
+      - 'docs/CP949-GRF-BEAM-BYTE-PRESERVATION.md'
       - 'docs/TDATA1-GRF-INTEGRATION.md'
       - '.github/workflows/tdata1-overlay-guard.yml'
   push:
@@ -34,3 +36,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test tdata1 priority and safety contract
         run: cargo test -p beam-core --lib grf_layer_guard -- --nocapture
+      - name: GRF legacy filename raw byte preservation regression
+        run: cargo test -p beam-formats --lib grf::tests -- --nocapture
