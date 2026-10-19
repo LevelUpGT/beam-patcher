@@ -35,3 +35,23 @@ for source Beam filename decoding. Existing GRF copy-through is at risk.
 Status: BLOCKED. Existing 623 ASCII-named GRF source files are only
 2022-review candidates, not player-deployment-ready. This document
 does not make runtime code changes or authorize any release.
+
+## Implemented interim protection in this draft PR
+
+The updated beam-formats GrfEntry now retains raw_filename: Vec<u8>
+independently of the lossy Unicode display name. GRF read-file-table
+keeps the original bytes; GRF copy-through and save serialize raw_filename
+instead of lossy UTF-8 display bytes. Exact-name collisions caused by
+legacy decoding return an error instead of overwriting an entry.
+
+Until a real CP949 encoder and BEAM GRF-name mapping are tested,
+Grf::patch_file rejects non-ASCII incoming file names rather than
+writing incompatible UTF-8 bytes. Two new synthetic Rust regressions
+cover two consecutive CP949 copy-through saves and non-ASCII blocking.
+The workflow runs cargo test -p beam-formats --lib grf::tests.
+
+This is a PARTIAL preservation fix, NOT the full Korean-name migration.
+Reading source names into lossy display strings remains; resolving
+different CP949 raw names that collapse to the same lossy display name
+must be handled by a future explicit codepage representation. The code
+now fails closed for those ambiguous GRF tables. No release authorized.
