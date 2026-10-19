@@ -17,6 +17,8 @@ const GRF_VERSION_0X300: u32 = 0x300;
 #[derive(Debug, Clone)]
 pub struct GrfEntry {
     pub filename: String,
+    /// Exact source GRF filename table bytes, including non-UTF8 CP949.
+    pub raw_filename: Vec<u8>,
     pub compressed_size: u32,
     pub compressed_size_aligned: u32,
     pub uncompressed_size: u32,
@@ -205,6 +207,7 @@ impl Grf {
                         filename.clone(),
                         GrfEntry {
                             filename,
+                            raw_filename: filename_bytes,
                             compressed_size,
                             compressed_size_aligned,
                             uncompressed_size,
@@ -304,6 +307,7 @@ impl Grf {
                         filename.clone(),
                         GrfEntry {
                             filename,
+                            raw_filename: filename_bytes,
                             compressed_size,
                             compressed_size_aligned,
                             uncompressed_size,
@@ -355,6 +359,7 @@ impl Grf {
                         filename.clone(),
                         GrfEntry {
                             filename,
+                            raw_filename: filename_buf,
                             compressed_size,
                             compressed_size_aligned,
                             uncompressed_size,
@@ -516,6 +521,7 @@ impl Grf {
                         filename.clone(),
                         GrfEntry {
                             filename: filename.clone(),
+                            raw_filename: entry.raw_filename.clone(),
                             compressed_size: entry.compressed_size,
                             compressed_size_aligned: entry.compressed_size_aligned,
                             uncompressed_size: entry.uncompressed_size,
@@ -560,6 +566,7 @@ impl Grf {
                     filename.clone(),
                     GrfEntry {
                         filename: filename.clone(),
+                        raw_filename: filename.as_bytes().to_vec(),
                         compressed_size,
                         compressed_size_aligned,
                         uncompressed_size: data.len() as u32,
@@ -575,7 +582,7 @@ impl Grf {
             // File table.
             let mut table_data = Vec::with_capacity(new_entries.len() * 32);
             for entry in new_entries.values() {
-                table_data.extend_from_slice(entry.filename.as_bytes());
+                table_data.extend_from_slice(&entry.raw_filename);
                 table_data.push(0);
                 table_data.extend_from_slice(&entry.compressed_size.to_le_bytes());
                 table_data.extend_from_slice(&entry.compressed_size_aligned.to_le_bytes());
