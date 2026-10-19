@@ -203,6 +203,9 @@ impl Grf {
                     cursor.read_exact(&mut offset_buf)?;
                     let offset = u32::from_le_bytes(offset_buf);
                     
+                    if entries.contains_key(&filename) {
+                        return Err(Error::Custom("Ambiguous GRF filename after legacy decoding".to_string()));
+                    }
                     entries.insert(
                         filename.clone(),
                         GrfEntry {
@@ -303,6 +306,9 @@ impl Grf {
                     cursor.read_exact(&mut offset_buf)?;
                     let offset = u32::from_le_bytes(offset_buf);
                     
+                    if entries.contains_key(&filename) {
+                        return Err(Error::Custom("Ambiguous GRF filename after legacy decoding".to_string()));
+                    }
                     entries.insert(
                         filename.clone(),
                         GrfEntry {
@@ -355,6 +361,9 @@ impl Grf {
                     reader.read_exact(&mut offset_buf)?;
                     let offset = u32::from_le_bytes(offset_buf);
                     
+                    if entries.contains_key(&filename) {
+                        return Err(Error::Custom("Ambiguous GRF filename after legacy decoding".to_string()));
+                    }
                     entries.insert(
                         filename.clone(),
                         GrfEntry {
@@ -413,6 +422,12 @@ impl Grf {
     }
     
     pub fn patch_file(&mut self, filename: &str, data: &[u8]) -> Result<()> {
+        // GRF filename table uses legacy client bytes, not arbitrary UTF-8.
+        // Until codepage-aware BEAM/GRF support is validated, never write
+        // a non-ASCII path using UTF-8 bytes into a 2022 GRF.
+        if !filename.is_ascii() {
+            return Err(Error::Custom("Non-ASCII GRF patch paths require verified legacy-codepage encoding".to_string()));
+        }
         // Store uncompressed data in memory for later rebuild
         tracing::info!("patch_file() called for: {} ({} bytes)", filename, data.len());
         // Patching wins over a queued removal for the same path.
