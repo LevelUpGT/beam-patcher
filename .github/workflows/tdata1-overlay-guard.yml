@@ -13,6 +13,7 @@ on:
       - 'beam-core/src/lib.rs'
       - 'beam-core/src/patcher.rs'
       - 'beam-formats/src/grf.rs'
+      - 'beam-formats/examples/verify_local_beam.rs'
       - 'docs/CP949-GRF-BEAM-BYTE-PRESERVATION.md'
       - 'docs/TDATA1-GRF-INTEGRATION.md'
       - '.github/workflows/tdata1-overlay-guard.yml'
@@ -38,3 +39,5 @@ jobs:
         run: cargo test -p beam-core --lib grf_layer_guard -- --nocapture
       - name: GRF legacy filename raw byte preservation regression
         run: cargo test -p beam-formats --lib grf::tests -- --nocapture
+      - name: Compile Rust Beam v1 offline byte verifier
+        run: cargo check -p beam-formats --example verify_local_beam
