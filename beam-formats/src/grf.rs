@@ -672,6 +672,52 @@ mod tests {
     }
 
     #[test]
+    fn cp949_raw_filename_bytes_survive_grf_rewrites() {
+        let path = tmp_grf("cp949_raw_roundtrip");
+        let mut grf = Grf::create_new(&path).expect("create disposable GRF");
+        let payload = b"original korean sprite data".to_vec();
+        grf.patch_file("data\\temporary.spr", &payload).unwrap();
+        grf.save().unwrap();
+
+        // Synthetic input with legacy CP949 Hangul raw bytes (0xB0A1).
+        // We model this at the file-table boundary, with no external fixture.
+        let original = b"data\\\xB0\xA1.spr".to_vec();
+        let display = String::from_utf8_lossy(&original).to_string();
+        let mut imported = Grf::open(&path).unwrap();
+        let mut entry = imported.entries.remove("data\\temporary.spr").unwrap();
+        entry.filename = display.clone();
+        entry.raw_filename = original.clone();
+        imported.entries.insert(display.clone(), entry);
+        imported.patch_file("data\\ascii.txt", b"other data").unwrap();
+        imported.save().expect("rewrite existing CP949 table entry");
+
+        let mut reopened = Grf::open(&path).expect("reopen CP949 path");
+        let cp949 = reopened.get_entry(&display).expect("legacy filename retained");
+        assert_eq!(cp949.raw_filename, original);
+        assert_eq!(reopened.extract_file(&display).unwrap(), payload);
+        reopened.patch_file("data\\second.txt", b"next patch").unwrap();
+        reopened.save().expect("second copy-through");
+
+        let last = Grf::open(&path).expect("second GRF read");
+        assert_eq!(last.get_entry(&display).unwrap().raw_filename, original);
+        assert_eq!(last.extract_file(&display).unwrap(), payload);
+        assert_eq!(last.extract_file("data\\second.txt").unwrap(), b"next patch");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn new_nonascii_grf_path_is_blocked_until_cp949_writer_is_verified() {
+        let path = tmp_grf("nonascii_guard");
+        let mut grf = Grf::create_new(&path).unwrap();
+        assert!(grf.patch_file("data\\sprite\\가.spr", b"would-be-utf8").is_err());
+        assert!(!grf.has_pending_changes());
+        grf.patch_file("data\\allowed.spr", b"allowed").unwrap();
+        grf.save().unwrap();
+        assert_eq!(Grf::open(&path).unwrap().file_count(), 1);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn create_then_open_roundtrip_empty() {
         let path = tmp_grf("empty");
         let g = Grf::create_new(&path).expect("create");
