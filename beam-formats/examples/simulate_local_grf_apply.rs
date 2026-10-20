@@ -119,7 +119,7 @@ fn simulate(beam_path: &Path, outdir: &Path) -> Result<(usize, u64), Box<dyn Err
     }
     for (alias, expected) in &records {
         let entry = opened.get_entry(alias).ok_or("GRF table destination was not saved")?;
-        if entry.raw_filename != alias.as_bytes() {
+        if entry.raw_filename.as_slice() != alias.as_bytes() {
             return Err("Raw GRF path bytes changed while saving".into());
         }
         let actual = opened.extract_file(alias)?;
