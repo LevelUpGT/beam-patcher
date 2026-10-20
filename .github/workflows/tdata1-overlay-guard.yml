@@ -14,6 +14,7 @@ on:
       - 'beam-core/src/patcher.rs'
       - 'beam-formats/src/grf.rs'
       - 'beam-formats/examples/verify_local_beam.rs'
+      - 'beam-formats/examples/simulate_local_grf_apply.rs'
       - 'docs/CP949-GRF-BEAM-BYTE-PRESERVATION.md'
       - 'docs/TDATA1-GRF-INTEGRATION.md'
       - '.github/workflows/tdata1-overlay-guard.yml'
@@ -43,3 +44,5 @@ jobs:
         run: cargo check -p beam-formats --example verify_local_beam
       - name: Run real Rust BeamArchive v1 source/alias and no-client regression fixtures
         run: cargo test -p beam-formats --example verify_local_beam -- --nocapture
+      - name: Build and simulate BEAM apply into disposable GRF; reopen all file bytes
+        run: cargo test -p beam-formats --example simulate_local_grf_apply -- --nocapture
