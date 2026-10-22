@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "beam-formats/src/grf.rs"
+      - "beam-formats/src/thor.rs"
       - "beam-formats/src/protected_grf_qa.rs"
       - "beam-formats/src/lib.rs"
       - "beam-formats/Cargo.toml"
@@ -13,6 +14,7 @@ on:
   pull_request:
     paths:
       - "beam-formats/src/grf.rs"
+      - "beam-formats/src/thor.rs"
       - "beam-formats/src/protected_grf_qa.rs"
       - "beam-formats/src/lib.rs"
       - "beam-formats/Cargo.toml"
