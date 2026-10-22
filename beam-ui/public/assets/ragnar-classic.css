@@ -293,8 +293,8 @@ body.theme-ragnar-classic .progress-bar-container::before {
     display: block;
     position: absolute;
     top: 16px;
-    left: 160px;
-    right: 154px;
+    left: 0;
+    right: 0;
     height: 12px;
     background: repeating-linear-gradient(115deg,
         #b3df9b 0, #b3df9b 9px, #eaf6aa 10px, #eaf6aa 18px,
@@ -307,8 +307,8 @@ body.theme-ragnar-classic .progress-bar-container::after {
     display: block;
     position: absolute;
     top: 0;
-    left: 160px;
-    right: 154px;
+    left: 0;
+    right: 0;
     height: 13px;
     background: repeating-linear-gradient(115deg,
         rgba(255,255,255,.35) 0,rgba(255,255,255,.35) 13px,
@@ -406,8 +406,6 @@ body.theme-ragnar-classic.theme-preview-only .btn-play-now { cursor: not-allowed
 @media (max-width: 760px) {
     body.theme-ragnar-classic .top-grid { grid-template-columns: 108px minmax(0,1fr) 98px; gap: 5px; }
     body.theme-ragnar-classic .progress-section { grid-template-columns: 108px minmax(0,1fr) 98px; gap: 0 5px; }
-    body.theme-ragnar-classic .progress-bar-container::before,
-    body.theme-ragnar-classic .progress-bar-container::after { left: 113px; right: 103px; }
     body.theme-ragnar-classic .btn-action-small { right: 90px; }
     body.theme-ragnar-classic .classic-ad-card { font-size: 12px; }
 }
