@@ -221,6 +221,13 @@ updater:
   # false = notify user and ask permission
   auto_update: false
 
+  # This fork belongs to LevelUpGT. Do not silently use beamguides/beam-patcher
+  # as the self-update source. No release/automatic update is authorized here.
+  github_repo:
+    owner: "LevelUpGT"
+    name: "beam-patcher"
+    bin_name: "beam-patcher"
+
 # ============================================================================
 # PATCH FORMAT SUPPORT
 # ============================================================================
