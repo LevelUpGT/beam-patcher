@@ -126,7 +126,7 @@ def verify_archive(blob, originals):
     version, count = struct.unpack_from("<II", blob, 4)
     require(version == 1 and count == len(originals), "BAD_BEAM_VERSION_OR_COUNT")
     require(blob[12:64] == bytes(52), "BEAM_RESERVED_BYTES_CHANGED")
-    offset, seen, end = HEADER_SIZE, {}, HEADER_SIZE
+    offset, seen, next_payload_offset = HEADER_SIZE, {}, None
     for _ in range(count):
         require(offset + 1 <= len(blob), "BEAM_TRUNCATED_TABLE")
         name_len = blob[offset]
@@ -142,16 +142,21 @@ def verify_archive(blob, originals):
         alias_size = blob[offset]
         offset += 1
         require(alias_size == 0 and name not in seen, "UNEXPECTED_GRFPATH_OR_DUPLICATE")
-        require(compressed_size > 0 and size <= MAX_FILE and
+        require(compressed_size > 0 and 0 < size <= MAX_FILE and
                 data_offset + compressed_size <= len(blob), "BEAM_PAYLOAD_OUT_OF_RANGE")
-        raw = zlib.decompress(blob[data_offset:data_offset + compressed_size])
-        require(len(raw) == size and hashlib.md5(raw).digest() == digest,
+        if next_payload_offset is None:
+            first_payload_offset = data_offset
+        else:
+            require(data_offset == next_payload_offset, "BEAM_PAYLOAD_OFFSET_DRIFT")
+        next_payload_offset = data_offset + compressed_size
+        decoder = zlib.decompressobj()
+        raw = decoder.decompress(blob[data_offset:next_payload_offset], size + 1)
+        require(decoder.eof and not decoder.unused_data and not decoder.unconsumed_tail and
+                len(raw) == size and hashlib.md5(raw).digest() == digest,
                 "BEAM_PAYLOAD_HASH_MISMATCH")
         seen[name] = raw
-        end = max(end, data_offset + compressed_size)
-    require(end == len(blob) and offset == min(
-        struct.unpack_from("<Q", blob, HEADER_SIZE + 1 + len(originals[0][0]) + 16 + 8)[0]
-        if count else HEADER_SIZE, len(blob)), "BEAM_TABLE_OFFSET_DRIFT")
+    require(offset == first_payload_offset and next_payload_offset == len(blob),
+            "BEAM_TABLE_OFFSET_DRIFT")
     require(seen == dict(originals), "BEAM_ROUNDTRIP_MISMATCH")
 
 
