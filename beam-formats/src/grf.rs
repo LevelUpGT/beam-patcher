@@ -113,9 +113,10 @@ impl Grf {
         // These versions need a real, independently verified decryptor.
         // Previous code treated their bytes as plaintext zlib (unsafe).
         match version {
-            GRF_VERSION_0X200 => {}
-            GRF_VERSION_0X101 | GRF_VERSION_0X102
-            | GRF_VERSION_0X103 | GRF_VERSION_0X300 => {
+            // Preserve existing plain legacy 0x101 read behavior. Writes
+            // remain restricted to 0x200 only.
+            GRF_VERSION_0X101 | GRF_VERSION_0X200 => {}
+            GRF_VERSION_0X102 | GRF_VERSION_0X103 | GRF_VERSION_0X300 => {
                 return Err(Error::Unsupported(format!(
                     "GRF version {version:#x} has no verified read/decrypt contract"
                 )));
