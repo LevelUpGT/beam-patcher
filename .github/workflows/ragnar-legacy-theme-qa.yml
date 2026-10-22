@@ -4,7 +4,7 @@
 # Version: 0.1.0-candidate
 # Aciklama: Offline source check only, no game files/patcher binary/release.
 # Bagimli Oldugu Katman: tools/tests/test_ragnar_legacy_theme.py | beam-ui/public/index.html
-name: Ragnar Legacy Theme Offline QA
+name: Ragnar Legacy and Classic Themes Offline QA
 
 on:
   push:
@@ -12,6 +12,9 @@ on:
     paths:
       - "beam-ui/public/index.html"
       - "beam-ui/public/assets/ragnar-legacy.css"
+      - "beam-ui/public/assets/ragnar-classic.css"
+      - "themes/ragnar-classic/**"
+      - "tools/tests/test_ragnar_classic_theme.py"
       - "themes/ragnar-legacy/**"
       - "tools/tests/test_ragnar_legacy_theme.py"
       - ".github/workflows/ragnar-legacy-theme-qa.yml"
@@ -19,6 +22,9 @@ on:
     paths:
       - "beam-ui/public/index.html"
       - "beam-ui/public/assets/ragnar-legacy.css"
+      - "beam-ui/public/assets/ragnar-classic.css"
+      - "themes/ragnar-classic/**"
+      - "tools/tests/test_ragnar_classic_theme.py"
       - "themes/ragnar-legacy/**"
       - "tools/tests/test_ragnar_legacy_theme.py"
       - ".github/workflows/ragnar-legacy-theme-qa.yml"
@@ -37,6 +43,8 @@ jobs:
           persist-credentials: false
       - name: Assert opt-in theme, preview and 2015 patch channel isolation
         run: python3 -B -m unittest discover -s tools/tests -p 'test_ragnar_legacy_theme.py' -v
+      - name: Seven screenshot-based classic launcher UI layout and safety contracts
+        run: python3 -B -m unittest discover -s tools/tests -p 'test_ragnar_classic_theme.py' -v
       - name: Extract inline Beam UI JavaScript for syntax validation
         shell: bash
         run: |
