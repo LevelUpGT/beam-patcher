@@ -62,10 +62,10 @@ impl Grf {
     pub fn version_name(version: u32) -> &'static str {
         match version {
             GRF_VERSION_0X101 => "0x101 (Legacy)",
-            GRF_VERSION_0X102 => "0x102 (Standard Encryption)",
-            GRF_VERSION_0X103 => "0x103 (Enhanced Encryption)",
+            GRF_VERSION_0X102 => "0x102 (Encrypted / unsupported for patching)",
+            GRF_VERSION_0X103 => "0x103 (Encrypted / unsupported for patching)",
             GRF_VERSION_0X200 => "0x200 (Modern Standard)",
-            GRF_VERSION_0X300 => "0x300 (Gepard Shield / Custom Encryption)",
+            GRF_VERSION_0X300 => "0x300 (Protected / unsupported for patching)",
             _ => "Unknown",
         }
     }
@@ -110,8 +110,16 @@ impl Grf {
         file.read_exact(&mut version_buf)?;
         let version = u32::from_le_bytes(version_buf);
         
+        // These versions need a real, independently verified decryptor.
+        // Previous code treated their bytes as plaintext zlib (unsafe).
         match version {
-            GRF_VERSION_0X101 | GRF_VERSION_0X102 | GRF_VERSION_0X103 | GRF_VERSION_0X200 | GRF_VERSION_0X300 => {},
+            GRF_VERSION_0X200 => {}
+            GRF_VERSION_0X101 | GRF_VERSION_0X102
+            | GRF_VERSION_0X103 | GRF_VERSION_0X300 => {
+                return Err(Error::Unsupported(format!(
+                    "GRF version {version:#x} has no verified read/decrypt contract"
+                )));
+            }
             _ => return Err(Error::InvalidGrfVersion(version)),
         }
         
@@ -445,8 +453,13 @@ impl Grf {
     }
     
     pub fn save(&mut self) -> Result<()> {
-        if self.version != GRF_VERSION_0X200 && self.version != GRF_VERSION_0X300 {
-            return Err(Error::Unsupported("Only GRF 0x200 and 0x300 save is supported".to_string()));
+        // The old 0x300 save path silently wrote *unencrypted* zlib bytes.
+        // Fail closed before any temporary file is created.
+        if self.version != GRF_VERSION_0X200 {
+            return Err(Error::Unsupported(format!(
+                "GRF {:#x} save refused: protected/encrypted format not verified",
+                self.version
+            )));
         }
 
         tracing::info!("GRF save() called - pending patches: {}, pending removals: {}, existing entries: {}",
@@ -723,6 +736,42 @@ mod tests {
         f.write_all(b"NOT A GRF FILE---").unwrap();
         let err = Grf::open(&path).unwrap_err();
         assert!(matches!(err, Error::InvalidGrfHeader));
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+// Security regression: encrypted GRF must never be silently rewritten.
+#[cfg(test)]
+mod protected_version_rejection_tests {
+    use super::*;
+
+    #[test]
+    fn refuses_legacy_encrypted_and_0x300_open() {
+        for version in [0x102_u32, 0x103, 0x300] {
+            let path = std::env::temp_dir().join(format!(
+                "beam-unsafe-{}-{version:x}.grf", std::process::id()
+            ));
+            let mut bytes = Vec::from(&b"Master of Magic\0"[..]);
+            bytes.extend_from_slice(&[0u8; 26]);
+            bytes.extend_from_slice(&version.to_le_bytes());
+            std::fs::write(&path, &bytes).unwrap();
+            assert!(matches!(Grf::open(&path), Err(Error::Unsupported(_))));
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    #[test]
+    fn refuses_0x300_save_without_rewriting_disk() {
+        let path = std::env::temp_dir().join(format!(
+            "beam-unsafe-save-{}.grf", std::process::id()
+        ));
+        let mut grf = Grf::create_new(&path).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        grf.version = 0x300;
+        grf.patch_file("data\\protected.rsw", b"important").unwrap();
+        assert!(matches!(grf.save(), Err(Error::Unsupported(_))));
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert!(!path.with_extension("grf.tmp").exists());
         let _ = std::fs::remove_file(&path);
     }
 }
