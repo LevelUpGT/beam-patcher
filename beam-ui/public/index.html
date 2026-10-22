@@ -1079,6 +1079,8 @@
             }
         }
     </style>
+    <!-- Explicit opt-in only: preserves the existing Beam appearance by default. -->
+    <link id="ragnar-legacy-theme-css" rel="stylesheet" href="assets/ragnar-legacy.css" disabled>
 </head>
 <body>
     <video id="video-background" autoplay loop muted playsinline></video>
@@ -1205,6 +1207,28 @@
     <script>
         // Check if running in Tauri or browser
         const isTauri = typeof window.__TAURI__ !== 'undefined';
+        // Browser-only QA: file:///.../index.html?theme=ragnar-legacy
+        // No QA URL overrides the real Tauri application's config.
+        const previewTheme = !isTauri &&
+            new URLSearchParams(window.location.search).get('theme') === 'ragnar-legacy';
+
+        function applyConfiguredTheme(config) {
+            const choice = previewTheme ? 'ragnar-legacy' : (config?.ui?.theme || 'default');
+            const legacy = choice === 'ragnar-legacy';
+            const sheet = document.getElementById('ragnar-legacy-theme-css');
+            if (sheet) sheet.disabled = !legacy;
+            document.body.classList.toggle('theme-ragnar-legacy', legacy);
+            document.body.classList.toggle('theme-preview-only', previewTheme);
+            if (previewTheme) {
+                // Do not simulate game launch, manual patch or cache writes.
+                for (const button of document.querySelectorAll(
+                    '#play-button, .btn-action-small, #register-btn-main'
+                )) button.disabled = true;
+                document.getElementById('progress-label').textContent =
+                    'Classic Ragnar theme preview - no patches or game launches';
+                document.getElementById('play-button').textContent = 'Preview Only';
+            }
+        }
         
         // Mock Tauri API for browser testing
         const invoke = isTauri 
@@ -1212,6 +1236,11 @@
             : async (cmd, args) => {
                 console.log('Mock invoke:', cmd, args);
                 if (cmd === 'get_news') {
+                    if (previewTheme) return [
+                        { id: 1, category: 'event', title: 'Overlook Dungeon - legacy announcement', url: 'about:blank' },
+                        { id: 2, category: 'event', title: 'PvP and Rank System - legacy announcement', url: 'about:blank' },
+                        { id: 3, category: 'event', title: 'Daily Rewards - legacy announcement', url: 'about:blank' }
+                    ];
                     const response = await fetch('https://goatmmo.com/api/cms/news?limit=3');
                     const data = await response.json();
                     return data.data;
@@ -1222,12 +1251,15 @@
                 if (cmd === 'get_config') {
                     return {
                         app: {
-                            server_name: 'GOATMMO',
+                            server_name: previewTheme ? 'Ragnar Ragnarok Online' : 'GOATMMO',
                             bgm_autoplay: false,
-                            video_background_enabled: true,
-                            video_background_file: 'assets/trailer.mp4',
-                            limited_items: []
-                        }
+                            video_background_enabled: !previewTheme,
+                            video_background_file: previewTheme ? null : 'assets/trailer.mp4',
+                            limited_items: [],
+                            grid_images: null,
+                            social_links: []
+                        },
+                        ui: { theme: previewTheme ? 'ragnar-legacy' : 'default', status_image_url: null }
                     };
                 }
                 return null;
@@ -1757,6 +1789,7 @@
                 config = await promptGameDirectorySelection();
             }
             
+            applyConfiguredTheme(config);
             if (config.app.server_name) {
                 document.getElementById('logo-text').textContent = config.app.server_name;
             }
