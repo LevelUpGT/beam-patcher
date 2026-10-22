@@ -1,0 +1,48 @@
+# File Path: .github/workflows/tdata1-overlay-guard.yml
+# Purpose: Verify fail-closed tdata1 registered GRF preflight on hosted Linux
+# Module: GitHub Actions
+# Version: 0.1.0-candidate
+# Description: Synthetic temp fixture only; no actual client/GRF/patchlist writes
+# Dependency Layer: beam-core/src/grf_layer_guard.rs
+
+name: BEAM tdata1 overlay guard
+on:
+  pull_request:
+    paths:
+      - 'beam-core/src/grf_layer_guard.rs'
+      - 'beam-core/src/lib.rs'
+      - 'beam-core/src/patcher.rs'
+      - 'beam-formats/src/grf.rs'
+      - 'beam-formats/examples/verify_local_beam.rs'
+      - 'beam-formats/examples/simulate_local_grf_apply.rs'
+      - 'docs/CP949-GRF-BEAM-BYTE-PRESERVATION.md'
+      - 'docs/TDATA1-GRF-INTEGRATION.md'
+      - '.github/workflows/tdata1-overlay-guard.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'beam-core/src/grf_layer_guard.rs'
+      - 'beam-core/src/lib.rs'
+      - 'beam-core/src/patcher.rs'
+      - '.github/workflows/tdata1-overlay-guard.yml'
+permissions:
+  contents: read
+jobs:
+  offline-guard-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test tdata1 priority and safety contract
+        run: cargo test -p beam-core --lib grf_layer_guard -- --nocapture
+      - name: GRF legacy filename raw byte preservation regression
+        run: cargo test -p beam-formats --lib grf::tests -- --nocapture
+      - name: Compile Rust Beam v1 offline byte verifier
+        run: cargo check -p beam-formats --example verify_local_beam
+      - name: Run real Rust BeamArchive v1 source/alias and no-client regression fixtures
+        run: cargo test -p beam-formats --example verify_local_beam -- --nocapture
+      - name: Build and simulate BEAM apply into disposable GRF; reopen all file bytes
+        run: cargo test -p beam-formats --example simulate_local_grf_apply -- --nocapture

@@ -37,6 +37,8 @@ pub struct Patcher {
 
 impl Patcher {
     pub fn new(config: Config) -> Result<Self> {
+        // Reject an unregistered tdata1 custom layer before any downloader/temp writes.
+        crate::grf_layer_guard::require_tdata1_layer_ready(&config)?;
         // Validate the protected client identity before downloader or temp writes.
         let compatibility_guard = PatchCompatibilityGuard::new(&config)?;
         let downloader = Downloader::new(config.clone())?;
@@ -131,6 +133,7 @@ impl Patcher {
             }
         }
 
+        crate::grf_layer_guard::require_tdata1_layer_ready(&self.config)?;
         let grf_path = self.get_grf_path()?;
         let mut grf = self.open_or_create_grf(&grf_path)?;
         let total = patches.len();
@@ -205,6 +208,7 @@ impl Patcher {
         if let Some(guard) = &self.compatibility_guard {
             guard.validate_file(patch_path)?;
         }
+        crate::grf_layer_guard::require_tdata1_layer_ready(&self.config)?;
         let grf_path = self.get_grf_path()?;
         let mut grf = self.open_or_create_grf(&grf_path)?;
         self.apply_patch_into_grf(patch_path, &mut grf).await?;
@@ -214,6 +218,7 @@ impl Patcher {
 
     /// Internal: stage the patch contents into a caller-owned GRF without saving.
     async fn apply_patch_into_grf(&self, patch_path: &Path, grf: &mut Grf) -> Result<()> {
+        crate::grf_layer_guard::require_tdata1_layer_ready(&self.config)?;
         if let Some(guard) = &self.compatibility_guard {
             guard.validate_file(patch_path)?;
         }

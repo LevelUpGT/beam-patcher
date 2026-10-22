@@ -17,6 +17,8 @@ const GRF_VERSION_0X300: u32 = 0x300;
 #[derive(Debug, Clone)]
 pub struct GrfEntry {
     pub filename: String,
+    /// Exact source GRF filename table bytes, including non-UTF8 CP949.
+    pub raw_filename: Vec<u8>,
     pub compressed_size: u32,
     pub compressed_size_aligned: u32,
     pub uncompressed_size: u32,
@@ -201,10 +203,14 @@ impl Grf {
                     cursor.read_exact(&mut offset_buf)?;
                     let offset = u32::from_le_bytes(offset_buf);
                     
+                    if entries.contains_key(&filename) {
+                        return Err(Error::Custom("Ambiguous GRF filename after legacy decoding".to_string()));
+                    }
                     entries.insert(
                         filename.clone(),
                         GrfEntry {
                             filename,
+                            raw_filename: filename_bytes,
                             compressed_size,
                             compressed_size_aligned,
                             uncompressed_size,
@@ -300,10 +306,14 @@ impl Grf {
                     cursor.read_exact(&mut offset_buf)?;
                     let offset = u32::from_le_bytes(offset_buf);
                     
+                    if entries.contains_key(&filename) {
+                        return Err(Error::Custom("Ambiguous GRF filename after legacy decoding".to_string()));
+                    }
                     entries.insert(
                         filename.clone(),
                         GrfEntry {
                             filename,
+                            raw_filename: filename_bytes,
                             compressed_size,
                             compressed_size_aligned,
                             uncompressed_size,
@@ -351,10 +361,14 @@ impl Grf {
                     reader.read_exact(&mut offset_buf)?;
                     let offset = u32::from_le_bytes(offset_buf);
                     
+                    if entries.contains_key(&filename) {
+                        return Err(Error::Custom("Ambiguous GRF filename after legacy decoding".to_string()));
+                    }
                     entries.insert(
                         filename.clone(),
                         GrfEntry {
                             filename,
+                            raw_filename: filename_buf,
                             compressed_size,
                             compressed_size_aligned,
                             uncompressed_size,
@@ -408,6 +422,12 @@ impl Grf {
     }
     
     pub fn patch_file(&mut self, filename: &str, data: &[u8]) -> Result<()> {
+        // GRF filename table uses legacy client bytes, not arbitrary UTF-8.
+        // Until codepage-aware BEAM/GRF support is validated, never write
+        // a non-ASCII path using UTF-8 bytes into a 2022 GRF.
+        if !filename.is_ascii() {
+            return Err(Error::Custom("Non-ASCII GRF patch paths require verified legacy-codepage encoding".to_string()));
+        }
         // Store uncompressed data in memory for later rebuild
         tracing::info!("patch_file() called for: {} ({} bytes)", filename, data.len());
         // Patching wins over a queued removal for the same path.
@@ -516,6 +536,7 @@ impl Grf {
                         filename.clone(),
                         GrfEntry {
                             filename: filename.clone(),
+                            raw_filename: entry.raw_filename.clone(),
                             compressed_size: entry.compressed_size,
                             compressed_size_aligned: entry.compressed_size_aligned,
                             uncompressed_size: entry.uncompressed_size,
@@ -560,6 +581,7 @@ impl Grf {
                     filename.clone(),
                     GrfEntry {
                         filename: filename.clone(),
+                        raw_filename: filename.as_bytes().to_vec(),
                         compressed_size,
                         compressed_size_aligned,
                         uncompressed_size: data.len() as u32,
@@ -575,7 +597,7 @@ impl Grf {
             // File table.
             let mut table_data = Vec::with_capacity(new_entries.len() * 32);
             for entry in new_entries.values() {
-                table_data.extend_from_slice(entry.filename.as_bytes());
+                table_data.extend_from_slice(&entry.raw_filename);
                 table_data.push(0);
                 table_data.extend_from_slice(&entry.compressed_size.to_le_bytes());
                 table_data.extend_from_slice(&entry.compressed_size_aligned.to_le_bytes());
@@ -647,6 +669,52 @@ mod tests {
         p.push(format!("beam_grf_test_{}_{}.grf", std::process::id(), name));
         let _ = std::fs::remove_file(&p);
         p
+    }
+
+    #[test]
+    fn cp949_raw_filename_bytes_survive_grf_rewrites() {
+        let path = tmp_grf("cp949_raw_roundtrip");
+        let mut grf = Grf::create_new(&path).expect("create disposable GRF");
+        let payload = b"original korean sprite data".to_vec();
+        grf.patch_file("data\\temporary.spr", &payload).unwrap();
+        grf.save().unwrap();
+
+        // Synthetic input with legacy CP949 Hangul raw bytes (0xB0A1).
+        // We model this at the file-table boundary, with no external fixture.
+        let original = b"data\\\xB0\xA1.spr".to_vec();
+        let display = String::from_utf8_lossy(&original).to_string();
+        let mut imported = Grf::open(&path).unwrap();
+        let mut entry = imported.entries.remove("data\\temporary.spr").unwrap();
+        entry.filename = display.clone();
+        entry.raw_filename = original.clone();
+        imported.entries.insert(display.clone(), entry);
+        imported.patch_file("data\\ascii.txt", b"other data").unwrap();
+        imported.save().expect("rewrite existing CP949 table entry");
+
+        let mut reopened = Grf::open(&path).expect("reopen CP949 path");
+        let cp949 = reopened.get_entry(&display).expect("legacy filename retained");
+        assert_eq!(cp949.raw_filename, original);
+        assert_eq!(reopened.extract_file(&display).unwrap(), payload);
+        reopened.patch_file("data\\second.txt", b"next patch").unwrap();
+        reopened.save().expect("second copy-through");
+
+        let last = Grf::open(&path).expect("second GRF read");
+        assert_eq!(last.get_entry(&display).unwrap().raw_filename, original);
+        assert_eq!(last.extract_file(&display).unwrap(), payload);
+        assert_eq!(last.extract_file("data\\second.txt").unwrap(), b"next patch");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn new_nonascii_grf_path_is_blocked_until_cp949_writer_is_verified() {
+        let path = tmp_grf("nonascii_guard");
+        let mut grf = Grf::create_new(&path).unwrap();
+        assert!(grf.patch_file("data\\sprite\\가.spr", b"would-be-utf8").is_err());
+        assert!(!grf.has_pending_changes());
+        grf.patch_file("data\\allowed.spr", b"allowed").unwrap();
+        grf.save().unwrap();
+        assert_eq!(Grf::open(&path).unwrap().file_count(), 1);
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
