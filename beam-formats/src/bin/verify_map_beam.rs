@@ -1,11 +1,12 @@
 // Dosya Yolu: REPO_ROOT/beam-formats/src/bin/verify_map_beam.rs
 // Amac: Python BEAM map candidate files validated with the actual Rust reader
 // Modul - Rust offline QA executable
-// Version: 0.1.0-candidate
-// Aciklama: Read-only SHA256 and source bytes gate, NO GRF, client or network writes
+// Version: 0.2.0-candidate
+// Aciklama: Read-only by default; optional explicit sandbox-only GRF roundtrip, never client or network writes
 // Bagimli Oldugu Katman: beam-formats::beam::BeamArchive | RagnarokClient maps/manifest.json
 
 use beam_formats::beam::BeamArchive;
+use beam_formats::grf::Grf;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeSet;
@@ -135,23 +136,120 @@ fn verify(archive_path: &Path, maps_root: &Path, catalog: &Path) -> VerifyResult
     Ok(maps.len())
 }
 
+// Explicit output for an isolated QA directory only. Neither a live game
+// directory nor an arbitrary path may be passed as a write destination.
+fn validated_qa_root(root: &Path) -> VerifyResult<PathBuf> {
+    if root.file_name().and_then(|s| s.to_str())
+        .is_none_or(|name| !name.eq_ignore_ascii_case("RagnarokMapcache-QA"))
+    {
+        return Err(fail("QA_ROOT_NAME_MUST_BE_RagnarokMapcache-QA"));
+    }
+    let metadata = fs::symlink_metadata(root)?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(fail("QA_ROOT_MUST_BE_EXISTING_REAL_DIRECTORY"));
+    }
+    Ok(root.canonicalize()?)
+}
+
+// Calls verify() first in main. Produces only a NEW GRF 0x200 in a
+// unique QA child directory, never publishes it or edits DATA.INI.
+fn qa_grf_roundtrip(
+    archive: &Path,
+    catalog: &Path,
+    qa_root: &Path,
+    map_count: usize,
+) -> VerifyResult<PathBuf> {
+    let safe_root = validated_qa_root(qa_root)?;
+    let data: Value = serde_json::from_slice(&regular_file(catalog, 131_072)?)?;
+    let maps = data.get("maps").and_then(Value::as_array)
+        .ok_or_else(|| fail("QA_CATALOG_MAPS_NOT_FOUND"))?;
+    if maps.len() != map_count {
+        return Err(fail("QA_MAP_COUNT_CHANGED"));
+    }
+
+    let beam = BeamArchive::open(archive)?;
+    let mut expected = Vec::new();
+    for row in maps {
+        let map = row.get("name").and_then(Value::as_str)
+            .ok_or_else(|| fail("QA_MAP_NAME_MISSING"))?;
+        if !valid_map(map) { return Err(fail("QA_MAP_NAME_INVALID")); }
+        for ext in ["gat", "gnd", "rsw"] {
+            let name = format!("data\\{map}.{ext}");
+            let sha = row.get(format!("{ext}_sha256")).and_then(Value::as_str)
+                .ok_or_else(|| fail("QA_MAP_SOURCE_HASH_MISSING"))?;
+            if sha.len() != 64 || !sha.bytes().all(|c| c.is_ascii_hexdigit()) {
+                return Err(fail("QA_MAP_SOURCE_HASH_INVALID"));
+            }
+            let bytes = beam.extract_file(&name)?;
+            if !sha256_hex(&bytes).eq_ignore_ascii_case(sha) {
+                return Err(fail("QA_ARCHIVE_ASSET_HASH_CHANGED"));
+            }
+            expected.push((name, bytes, sha.to_owned()));
+        }
+    }
+
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?.as_nanos();
+    let child = safe_root.join(format!("beam-grf-qa-{}-{nanos}", std::process::id()));
+    fs::create_dir(&child)?;
+    let grf_path = child.join("custom-maps-qa.grf");
+
+    let mut grf = Grf::create_new(&grf_path)?;
+    for (name, bytes, _) in &expected {
+        grf.patch_file(name, bytes)?;
+    }
+    grf.save()?;
+    let reloaded = Grf::open(&grf_path)?;
+    if reloaded.version != 0x200 || reloaded.file_count() != expected.len() {
+        return Err(fail("QA_GRF_VERSION_OR_ENTRY_COUNT_MISMATCH"));
+    }
+    let actual_names: BTreeSet<String> =
+        reloaded.list_files().into_iter().map(str::to_string).collect();
+    let wanted_names: BTreeSet<String> = expected.iter().map(|x| x.0.clone()).collect();
+    if actual_names != wanted_names {
+        return Err(fail("QA_GRF_FILENAME_SET_MISMATCH"));
+    }
+    for (name, bytes, sha) in &expected {
+        let actual = reloaded.extract_file(name)?;
+        if actual != *bytes || !sha256_hex(&actual).eq_ignore_ascii_case(sha) {
+            return Err(fail("QA_GRF_READBACK_MISMATCH"));
+        }
+    }
+    Ok(grf_path)
+}
+
 fn main() {
     let args: Vec<_> = std::env::args_os().collect();
-    if args.len() != 4 {
-        eprintln!("USAGE: verify_map_beam <custom-maps.beam> <client-maps-root> <maps/manifest.json>");
+    let apply_qa = args.len() == 6
+        && args[4].to_string_lossy() == "--qa-grf-root";
+    if args.len() != 4 && !apply_qa {
+        eprintln!("USAGE: verify_map_beam <custom-maps.beam> <client-maps-root> <maps/manifest.json> [--qa-grf-root <existing-RagnarokMapcache-QA-dir>]");
         std::process::exit(2);
     }
     let archive = PathBuf::from(&args[1]);
     let maps = PathBuf::from(&args[2]);
     let manifest = PathBuf::from(&args[3]);
-    match verify(&archive, &maps, &manifest) {
-        Ok(count) => println!(
-            "BEAM_RUST_READBACK_OK maps={count} files={} offline=true",
-            count * 3
-        ),
+    // Verify source SHA-256 and archive bytes before any QA GRF is written.
+    let count = match verify(&archive, &maps, &manifest) {
+        Ok(count) => count,
         Err(err) => {
             eprintln!("BEAM_RUST_READBACK_REJECTED: {err}");
             std::process::exit(1);
+        }
+    };
+    println!("BEAM_RUST_READBACK_OK maps={count} files={} offline=true", count * 3);
+    if apply_qa {
+        let root = PathBuf::from(&args[5]);
+        match qa_grf_roundtrip(&archive, &manifest, &root, count) {
+            Ok(path) => println!(
+                "BEAM_GRF_QA_APPLY_OK maps={count} files={} grf={} isolated=true deploy=false",
+                count * 3,
+                path.display()
+            ),
+            Err(err) => {
+                eprintln!("BEAM_GRF_QA_APPLY_REJECTED: {err}");
+                std::process::exit(1);
+            }
         }
     }
 }
@@ -166,5 +264,13 @@ mod tests {
         assert!(!valid_group("../other"));
         assert!(!valid_map("this_is_way_too_long"));
         assert!(!valid_map("bad/path"));
+    }
+
+    #[test]
+    fn rejects_arbitrary_game_directory_as_qa_root() {
+        let wrong_path = PathBuf::from("D:/Ragnarok");
+        assert!(validated_qa_root(&wrong_path).is_err());
+        let wrong_path = PathBuf::from("RagnarokClient");
+        assert!(validated_qa_root(&wrong_path).is_err());
     }
 }
