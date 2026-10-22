@@ -48,9 +48,9 @@ memory-only or protected staging strategy, secure cleanup, crash-safe
 rollback and a trusted release manifest; the test is not production
 security. This QA API caps source size to 64 MiB to bound memory usage.
 
-Existing `Grf::open()` now **rejects** 0x101/0x102/0x103/0x300,
-which it cannot safely decode, and `Grf::save()` supports only the
-verified regular 0x200 writer. Prior behavior risked corrupting
+Existing `Grf::open()` preserves legacy 0x101 read support and **rejects**
+unverified protected/encrypted 0x102/0x103/0x300 parsing. `Grf::save()`
+supports only the verified regular 0x200 writer. Prior behavior risked corrupting
 "encrypted" archives by treating compressed bytes as decrypted data.
 
 ## Gates to an actually protected, usable GRF
