@@ -7,6 +7,9 @@ on:
       - "tools/build_map_beam.py"
       - "tools/tests/test_build_map_beam.py"
       - "beam-formats/src/beam.rs"
+      - "beam-formats/src/bin/verify_map_beam.rs"
+      - "beam-formats/Cargo.toml"
+      - "tools/tests/prepare_rust_beam_fixture.py"
       - ".github/workflows/grouped-map-beam.yml"
   pull_request:
     paths:
@@ -31,3 +34,27 @@ jobs:
         run: python3 -B -m unittest discover -s tools/tests -p 'test_build_map_beam.py' -v
       - name: Rust BEAM archive roundtrip compatibility
         run: cargo test -p beam-formats save_open_roundtrip_with_grf_path
+      - name: Rust verifier unit tests
+        run: cargo test -p beam-formats --bin verify_map_beam
+      - name: Python encoder to actual Rust BeamArchive interoperability
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B tools/tests/prepare_rust_beam_fixture.py "$RUNNER_TEMP/beam-interop"
+          cargo run --quiet -p beam-formats --bin verify_map_beam -- \
+            "$RUNNER_TEMP/beam-interop/custom-maps.beam" \
+            "$RUNNER_TEMP/beam-interop/maps" \
+            "$RUNNER_TEMP/beam-interop/maps/manifest.json"
+      - name: Rust readback must fail if source SHA drifts
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf 'tampered' >> "$RUNNER_TEMP/beam-interop/maps/data/anotherdungeon/qa_map1.rsw"
+          if cargo run --quiet -p beam-formats --bin verify_map_beam -- \
+            "$RUNNER_TEMP/beam-interop/custom-maps.beam" \
+            "$RUNNER_TEMP/beam-interop/maps" \
+            "$RUNNER_TEMP/beam-interop/maps/manifest.json"; then
+            echo "::error::Rust readback accepted mismatched source hash"
+            exit 1
+          fi
+          echo 'BEAM_RUST_NEGATIVE_SHA_DRIFT_REJECTED'
