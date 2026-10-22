@@ -394,6 +394,14 @@ impl Grf {
     pub fn extract_file(&self, filename: &str) -> Result<Vec<u8>> {
         let entry = self.entries.get(filename)
             .ok_or_else(|| Error::FileNotFound(filename.to_string()))?;
+        // 0x200 can still have per-entry DES/MIXCRYPT flags. This
+        // implementation has no verified decryptor for those flags.
+        if entry.flags & !0x01 != 0 {
+            return Err(Error::Unsupported(format!(
+                "encrypted or unsupported GRF entry flags {:#x}: {filename}",
+                entry.flags
+            )));
+        }
 
         let mut file = std::fs::File::open(&self.file_path)?;
         file.seek(SeekFrom::Start((entry.offset + GRF_HEADER_SIZE) as u64))?;
@@ -461,6 +469,16 @@ impl Grf {
                 "GRF {:#x} save refused: protected/encrypted format not verified",
                 self.version
             )));
+        }
+
+        // Never rewrite a GRF 0x200 containing encrypted/unknown-flag
+        // entries: untouched ciphertext may require special metadata and
+        // overwriting an encrypted path with plaintext breaks protection.
+        if self.has_pending_changes() && self.entries.values().any(|e| e.flags & !0x01 != 0) {
+            return Err(Error::Unsupported(
+                "GRF has encrypted or unsupported entry flags: refusing unsafe rewrite"
+                    .to_string(),
+            ));
         }
 
         tracing::info!("GRF save() called - pending patches: {}, pending removals: {}, existing entries: {}",
@@ -774,5 +792,41 @@ mod protected_version_rejection_tests {
         assert_eq!(std::fs::read(&path).unwrap(), original);
         assert!(!path.with_extension("grf.tmp").exists());
         let _ = std::fs::remove_file(&path);
+    }
+}
+
+#[cfg(test)]
+mod encrypted_entry_flag_rejection_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn grf_0x200_encrypted_entry_cannot_be_extracted_or_rewritten() {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "beam-grf-encrypted-flags-{}-{stamp}.grf", std::process::id()
+        ));
+        let result = (|| -> Result<()> {
+            let mut grf = Grf::create_new(&path)?;
+            grf.patch_file("data\\protected.gat", b"fixture-only")?;
+            grf.save()?;
+            let original = std::fs::read(&path)?;
+            let mut reopened = Grf::open(&path)?;
+            let encrypted = reopened.entries.get_mut("data\\protected.gat").unwrap();
+            // 0x02 / 0x04 are documented encrypted entry flags even if
+            // the GRF header itself claims version 0x200.
+            encrypted.flags = 0x03;
+            assert!(matches!(
+                reopened.extract_file("data\\protected.gat"),
+                Err(Error::Unsupported(_))
+            ));
+            reopened.patch_file("data\\another.gat", b"new-data")?;
+            assert!(matches!(reopened.save(), Err(Error::Unsupported(_))));
+            assert_eq!(std::fs::read(&path)?, original);
+            assert!(!path.with_extension("grf.tmp").exists());
+            Ok(())
+        })();
+        let _ = std::fs::remove_file(&path);
+        result.unwrap();
     }
 }
