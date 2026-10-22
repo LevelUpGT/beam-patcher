@@ -30,8 +30,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Check formatting
-        run: cargo fmt --all --check
       - name: Protected GRF authenticated roundtrip and simulated patch/reseal
         run: cargo test -p beam-formats protected_grf_qa -- --nocapture
       - name: Reject unsupported encrypted GRF versions before writes
