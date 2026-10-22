@@ -1,0 +1,33 @@
+# Offline-only BEAM v1 map package QA. Never applies a patch, changes GRF or releases.
+name: Grouped Map BEAM Contract QA
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/build_map_beam.py"
+      - "tools/tests/test_build_map_beam.py"
+      - "beam-formats/src/beam.rs"
+      - ".github/workflows/grouped-map-beam.yml"
+  pull_request:
+    paths:
+      - "tools/build_map_beam.py"
+      - "tools/tests/test_build_map_beam.py"
+      - "beam-formats/src/beam.rs"
+      - ".github/workflows/grouped-map-beam.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Python synthetic format / catalog / no-overwrite regressions
+        run: python3 -B -m unittest discover -s tools/tests -p 'test_build_map_beam.py' -v
+      - name: Rust BEAM archive roundtrip compatibility
+        run: cargo test -p beam-formats save_open_roundtrip_with_grf_path
