@@ -53,6 +53,14 @@ unverified protected/encrypted 0x102/0x103/0x300 parsing. `Grf::save()`
 supports only the verified regular 0x200 writer. Prior behavior risked corrupting
 "encrypted" archives by treating compressed bytes as decrypted data.
 
+Further GRF 0x200 hardening: `0x200` header by itself does NOT prove every
+entry is plaintext. GRF records can use per-entry encrypted flags
+`0x02` / `0x04`. `Grf::extract_file()` now refuses such entries rather
+than interpreting ciphertext as zlib, and `Grf::save()` rejects any
+modification of a GRF containing encrypted/unknown entry flags until a
+verified decrypt/re-encrypt writer is implemented. This protects the
+existing game and avoids silently stripping encryption.
+
 ## Gates to an actually protected, usable GRF
 
 1. Determine the **exact** local 20220406 Ragexe binary SHA-256, PE
