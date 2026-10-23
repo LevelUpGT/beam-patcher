@@ -113,3 +113,28 @@ WinUI theming still requires an upstream framework feature.
 
 **No release, no player update feed, no GRF, no DATA.INI, no game
 executable changes.** Existing Inno test workflow remains untouched.
+
+## Windows 10 ordinal 345 startup regression (2026-10-24)
+
+Earlier one-file QA EXE could fail on Windows 10 at process load time
+with "ordinal 345 could not be located". Ordinal 345 corresponds to
+TaskDialogIndirect exported from ComCtl32 v6. The old build accidentally
+relied on static imports without independently verifying the selected
+Common Controls assembly in the end-user installer.
+
+The corrected portable single EXE:
+- embeds `ragnar-setup.manifest` as resource type 24, ID 1,
+  explicitly requesting Microsoft.Windows.Common-Controls v6;
+- resolves `TaskDialogIndirect` dynamically by name and never imports
+  ComCtl32 ordinal 345 at EXE process initialization;
+- rejects unavailable Task Dialog APIs with a readable error instead of
+  a Windows loader failure;
+- exercises two separate Windows CI checks: manifest extraction from the
+  **final** EXE, then live `--verify-dialog-runtime` import resolution;
+- continues to check the embedded Velopack payload SHA-256;
+- does not claim a Windows 10 GUI smoke unless actually performed on
+  a real Windows 10 test environment.
+
+The previously published EXE with SHA-256
+`aa2c2903376da4c1e524340285a391285994715e8e8cfb68c17b0d81ed2fa9f8`
+is superseded and should not be used for testing.

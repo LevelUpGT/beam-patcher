@@ -1,7 +1,7 @@
 // Dosya Yolu: tools/windows/ragnar-turkuaz-qa/RagnarSetupWizard.cpp
 // Amac: Tek dosyali yerel Ragnar preview kurulumunu kullanici secenekleriyle baslatmak
 // Modul - Windows native C++ Setup UI
-// Version: 0.2.0-qa
+// Version: 0.2.1-qa
 // Aciklama: Embedded verified Velopack Setup, klasor secimi, kısayol tercihleri ve marka splash
 // Bagimli Oldugu Katman: Velopack Setup | TurkuazInstaller preview QA build
 // Note: This small user-facing wizard is NOT the full TurkuazInstaller Core runtime.
@@ -22,12 +22,10 @@
 
 #include "setup_hash.h"
 
-#pragma comment(lib, "comctl32.lib")
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "bcrypt.lib")
 #pragma comment(lib, "user32.lib")
-#pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 namespace {
 constexpr int kSetupResourceId = 101;
@@ -44,6 +42,35 @@ std::wstring Message(const wchar_t* reason) {
 }
 void Alert(const std::wstring& text, UINT icon = MB_ICONERROR) {
     MessageBoxW(nullptr, text.c_str(), L"Ragnar Kurulum | Turkuaz QA", MB_OK | icon);
+}
+
+// TaskDialogIndirect is ordinal 345 in ComCtl32 v6. Statically importing it
+// causes Windows 10 loader error 127/ordinal 345 before wWinMain when a v5
+// comctl32 is selected. Resolve it at runtime and fail closed with a message.
+using TaskDialogIndirectFn =
+    HRESULT (WINAPI*)(const TASKDIALOGCONFIG*, int*, int*, BOOL*);
+
+bool HasTaskDialogRuntime() {
+    HMODULE library = LoadLibraryW(L"comctl32.dll");
+    if (!library) return false;
+    const bool found = GetProcAddress(library, "TaskDialogIndirect") != nullptr;
+    FreeLibrary(library);
+    return found;
+}
+
+HRESULT InvokeTaskDialog(const TASKDIALOGCONFIG* config, int* button,
+                         int* radio, BOOL* checked) {
+    HMODULE library = LoadLibraryW(L"comctl32.dll");
+    if (!library) return HRESULT_FROM_WIN32(GetLastError());
+    const auto function = reinterpret_cast<TaskDialogIndirectFn>(
+        GetProcAddress(library, "TaskDialogIndirect"));
+    if (!function) {
+        FreeLibrary(library);
+        return HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND);
+    }
+    const HRESULT result = function(config, button, radio, checked);
+    FreeLibrary(library);
+    return result;
 }
 
 Bytes EmbeddedSetup() {
@@ -104,7 +131,7 @@ int ChoosePage(const wchar_t* heading, const std::wstring& details,
     config.cButtons = UINT(buttons.size());
     config.pButtons = buttons.data();
     int clicked = IDCANCEL;
-    const HRESULT hr = TaskDialogIndirect(&config, &clicked, nullptr, nullptr);
+    const HRESULT hr = InvokeTaskDialog(&config, &clicked, nullptr, nullptr);
     return FAILED(hr) ? IDCANCEL : clicked;
 }
 
@@ -296,7 +323,7 @@ int InstallInteractive() {
     choices.nDefaultRadioButton = 10;
     choices.dwCommonButtons = TDCBF_OK_BUTTON | TDCBF_CANCEL_BUTTON;
     int answer = IDCANCEL, option = 10;
-    if (FAILED(TaskDialogIndirect(&choices, &answer, &option, nullptr)) || answer != IDOK) return 0;
+    if (FAILED(InvokeTaskDialog(&choices, &answer, &option, nullptr)) || answer != IDOK) return 0;
 
     const std::vector<TASKDIALOG_BUTTON> install{{100, L"Kur"}, {IDCANCEL, L"Iptal"}};
     if (ChoosePage(L"Kuruluma hazır", folder +
@@ -325,12 +352,20 @@ int InstallInteractive() {
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR commandLine, int) {
     if (commandLine && wcscmp(commandLine, L"--verify-payload") == 0)
         return VerifyEmbeddedSetup() ? 0 : 4;
+    if (commandLine && wcscmp(commandLine, L"--verify-dialog-runtime") == 0)
+        return HasTaskDialogRuntime() ? 0 : 4;
     if (commandLine && *commandLine) {
         Alert(L"Desteklenmeyen komut satırı seçeneği.");
         return 2;
     }
     const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     if (FAILED(init)) { Alert(L"Windows iletişim sistemi hazırlanamadı."); return 4; }
+    if (!HasTaskDialogRuntime()) {
+        Alert(L"Windows Common Controls v6 etkinleştirilemedi. "
+              L"Kurulum güvenli şekilde durduruldu.");
+        CoUninitialize();
+        return 4;
+    }
     const int code = InstallInteractive();
     CoUninitialize();
     return code;
