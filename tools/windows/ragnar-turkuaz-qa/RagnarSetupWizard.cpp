@@ -6,8 +6,6 @@
 // Bagimli Oldugu Katman: Velopack Setup | TurkuazInstaller preview QA build
 // Note: This small user-facing wizard is NOT the full TurkuazInstaller Core runtime.
 
-#define UNICODE
-#define _UNICODE
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commctrl.h>
@@ -28,6 +26,7 @@
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "bcrypt.lib")
+#pragma comment(lib, "user32.lib")
 #pragma comment(linker, "/manifestdependency:\"type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 namespace {
@@ -35,7 +34,7 @@ constexpr int kSetupResourceId = 101;
 constexpr wchar_t kProductTitle[] = L"Ragnar Classic Visual Preview";
 constexpr wchar_t kShortcutFile[] = L"Ragnar Classic Visual Preview.lnk";
 constexpr wchar_t kPackageExe[] = L"RagnarClassicPreview-Setup.exe";
-constexpr wchar_t kVersion[] = L"v0.2.0 - QA";
+constexpr wchar_t kVersion[] = L"v0.1.0 - QA";
 constexpr wchar_t kInstalledLauncher[] = L"RagnarClassicPreview.exe";
 
 struct Bytes { const BYTE* data; DWORD length; };
