@@ -6,6 +6,7 @@
 // Bagimli Oldugu Katman: RagnarSetupWizard.cpp adapter | Windows UI / GDI
 
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
 #include <shlobj.h>
 #include <wingdi.h>
@@ -42,7 +43,7 @@ struct Result { bool success = false; std::wstring message; };
 struct State {
     HWND hwnd = nullptr, go = nullptr, back = nullptr, browse = nullptr;
     HWND folder = nullptr, desktop = nullptr, start = nullptr;
-    HFONT heading = nullptr, body = nullptr, small = nullptr;
+    HFONT heading = nullptr, body = nullptr, smallFont = nullptr;
     HBRUSH formBackground = nullptr;
     Page page = Page::Welcome;
     int pulse = 0;
@@ -96,33 +97,33 @@ void Paint(HDC dc) {
     Print(dc, state.heading, RGB(250,252,255), L"RAGNAR", 40, 38, 640, 74);
     Print(dc, state.body, RGB(213,239,240),
           L"Ragnarok Online  /  Classic Visual Preview", 44, 119, 680, 30);
-    Print(dc, state.small, RGB(145,202,211),
+    Print(dc, state.smallFont, RGB(145,202,211),
           L"TURKUAZ   •   KURULUM   •   v0.1.0 QA", 44, 150, 680, 26);
-    Print(dc, state.small, RGB(183,217,222),
+    Print(dc, state.smallFont, RGB(183,217,222),
           L"LevelUpGT  •  Yalnızca test  •  Oyun dosyaları değiştirilmez", 42, 496, 700, 25);
     switch (state.page) {
       case Page::Welcome:
         Print(dc, state.body, RGB(255,255,255),
               L"Ragnar dünyasına hoş geldin", 44, 218, 670, 38);
-        Print(dc, state.small, RGB(215,235,239),
+        Print(dc, state.smallFont, RGB(215,235,239),
               L"Bu kurulumda hedef klasörü ve kısayolları seçebilirsin.\n"
               L"Tüm adımlar bu pencerede tamamlanacak.", 44, 268, 670, 80, DT_WORDBREAK);
-        Print(dc, state.small, RGB(155,210,217),
+        Print(dc, state.smallFont, RGB(155,210,217),
               L"Önizleme sunucuya bağlanmaz veya oyun güncellemesi yapmaz.",
               44, 366, 680, 40);
         break;
       case Page::Options:
         Print(dc, state.body, RGB(255,255,255),
               L"Kurulum seçenekleri", 44, 203, 675, 37);
-        Print(dc, state.small, RGB(220,243,246),
+        Print(dc, state.smallFont, RGB(220,243,246),
               L"Kurulum klasörü", 44, 248, 670, 27);
-        Print(dc, state.small, RGB(220,243,246),
+        Print(dc, state.smallFont, RGB(220,243,246),
               L"Kısayollar", 44, 341, 670, 27);
         break;
       case Page::Installing: {
         Print(dc, state.body, RGB(255,255,255),
               L"Ragnar kuruluyor", 44, 214, 670, 40);
-        Print(dc, state.small, RGB(219,237,239),
+        Print(dc, state.smallFont, RGB(219,237,239),
               L"Dosyalar sessiz olarak kuruluyor. Bu pencereyi kapatmayın.",
               44, 270, 680, 54, DT_WORDBREAK);
         Solid(dc, RECT{44,354,732,368}, RGB(30,67,84));
@@ -131,7 +132,7 @@ void Paint(HDC dc) {
         const int right = std::min(732,44+start+160);
         if (right > left)
             Solid(dc, RECT{left,354,right,368}, RGB(44,225,192));
-        Print(dc, state.small, RGB(165,206,215),
+        Print(dc, state.smallFont, RGB(165,206,215),
               L"Yükleme sürüyor — gerçek yüzde bilgisi olmadığı için gösterilmez.",
               44, 386, 678, 48, DT_WORDBREAK);
         break;
@@ -139,7 +140,7 @@ void Paint(HDC dc) {
       case Page::Complete:
         Print(dc, state.body, RGB(255,255,255),
               L"Kurulum tamamlandı", 44, 220, 670, 45);
-        Print(dc, state.small, RGB(218,242,235),
+        Print(dc, state.smallFont, RGB(218,242,235),
               state.error.empty()
                   ? L"Ragnar Classic önizlemesi hazır. İstersen şimdi açabilir\n"
                     L"veya Kapat seçeneğiyle kurulumdan çıkabilirsin."
@@ -149,7 +150,7 @@ void Paint(HDC dc) {
       case Page::Failed:
         Print(dc, state.body, RGB(255,222,214),
               L"Kurulum tamamlanamadı", 44, 207, 680, 43);
-        Print(dc, state.small, RGB(247,217,218), state.error.c_str(),
+        Print(dc, state.smallFont, RGB(247,217,218), state.error.c_str(),
               44, 268, 672, 148, DT_WORDBREAK | DT_END_ELLIPSIS);
         break;
     }
@@ -240,7 +241,7 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
                                     DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
         state.body = CreateFontW(-24,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,
                                  DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
-        state.small = CreateFontW(-17,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,
+        state.smallFont = CreateFontW(-17,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,
                                   DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
         state.formBackground = CreateSolidBrush(RGB(20,71,83));
         state.go = CreateWindowW(L"BUTTON",L"DEVAM ET  →",
@@ -260,7 +261,7 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
                                     WS_CHILD|BS_AUTOCHECKBOX|WS_TABSTOP,
                                     355,378,320,29,window,reinterpret_cast<HMENU>(kStart),nullptr,nullptr);
         for (HWND child : {state.go,state.back,state.folder,state.browse,state.desktop,state.start})
-            SendMessageW(child,WM_SETFONT,reinterpret_cast<WPARAM>(state.small),TRUE);
+            SendMessageW(child,WM_SETFONT,reinterpret_cast<WPARAM>(state.smallFont),TRUE);
         state.destination = RagnarDefaultTarget();
         SetWindowTextW(state.folder,state.destination.c_str());
         SendMessageW(state.desktop,BM_SETCHECK,BST_CHECKED,0);
@@ -329,7 +330,7 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
         return 0;
       case WM_DESTROY:
         KillTimer(window,kPulse);
-        for (HFONT font : {state.heading,state.body,state.small}) if (font) DeleteObject(font);
+        for (HFONT font : {state.heading,state.body,state.smallFont}) if (font) DeleteObject(font);
         if (state.formBackground) DeleteObject(state.formBackground);
         PostQuitMessage(0);
         return 0;
