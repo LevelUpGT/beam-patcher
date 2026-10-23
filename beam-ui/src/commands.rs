@@ -206,6 +206,13 @@ pub async fn launch_game(
     Ok(())
 }
 
+// The native UI knows whether this is a read-only preview build.
+// This cannot be enabled by a player-edited YAML file.
+#[tauri::command]
+pub fn get_preview_mode() -> bool {
+    cfg!(feature = "preview-only")
+}
+
 #[tauri::command]
 pub fn get_config(state: State<'_, AppState>) -> Result<Config, String> {
     let config = state.config.lock().unwrap().clone();
