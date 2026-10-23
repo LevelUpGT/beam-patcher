@@ -1,0 +1,37 @@
+# Dosya Yolu: tools/windows/ragnar-turkuaz-qa/ui-profile.yml
+# Amac: Ragnar Classic TurkuazInstaller test arayuzu marka ve Turkce metinleri
+# Modul - Config YAML
+# Version: 0.1.0-qa
+# Aciklama: Standart WinUI branding contract; oyuna ve update guvenligine etki etmez
+# Bagimli Oldugu Katman: TurkuazInstaller Community UI profile contract
+# ragnar-turkuaz-qa: managed local preview branding
+schema_version: 1
+culture: tr-TR
+branding:
+  window_title: "Ragnar Ragnarok Online | Kurulum Testi"
+  header_title: "RAGNAR RAGNAROK ONLINE"
+  header_subtitle: "Turkuaz Installer | Klasik istemci önizlemesi"
+  footer: "LevelUpGT • QA önizleme • Oyun dosyalarına dokunulmaz"
+labels:
+  install: "Kur"
+  update: "Güncelle"
+  repair: "Onar"
+  rollback: "Geri Al"
+  uninstall: "Kaldır"
+  check_updates: "Güncellemeleri Denetle"
+  retry: "Yeniden Dene"
+  cancel: "İptal"
+  stable: "Kararlı"
+  beta: "Beta"
+  ready: "Hazır"
+  preparing: "Paket bilgileri hazırlanıyor"
+  downloading: "Paket alınıyor"
+  verifying: "İmza ve bütünlük doğrulanıyor"
+  staging: "Kurulum hazırlanıyor"
+  applying: "Kurulum uygulanıyor"
+  completed: "İşlem tamamlandı"
+  cancelled: "İşlem iptal edildi"
+  reboot_required: "Yeniden başlatma gerekli"
+  operation_failed_prefix: "İşlem başarısız:"
+  package_id_required: "Paket kimliği gereklidir."
+  manifest_required: "İmzalı manifest gereklidir."
