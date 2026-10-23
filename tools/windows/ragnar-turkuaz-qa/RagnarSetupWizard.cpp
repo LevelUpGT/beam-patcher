@@ -1,10 +1,10 @@
 // Dosya Yolu: tools/windows/ragnar-turkuaz-qa/RagnarSetupWizard.cpp
-// Amac: Tek dosyali yerel Ragnar preview kurulumunu kullanici secenekleriyle baslatmak
+// Amac: Branded wizard icin dogrulanmis Velopack islem ve dosya erisim adapterleri
 // Modul - Windows native C++ Setup UI
-// Version: 0.2.1-qa
+// Version: 0.3.0-qa
 // Aciklama: Embedded verified Velopack Setup, klasor secimi, kısayol tercihleri ve marka splash
 // Bagimli Oldugu Katman: Velopack Setup | TurkuazInstaller preview QA build
-// Note: This small user-facing wizard is NOT the full TurkuazInstaller Core runtime.
+// Note: Legacy dialog helpers are not invoked by the standalone QA wizard.
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -349,24 +349,88 @@ int InstallInteractive() {
 }
 } // namespace
 
-int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR commandLine, int) {
-    if (commandLine && wcscmp(commandLine, L"--verify-payload") == 0)
-        return VerifyEmbeddedSetup() ? 0 : 4;
-    if (commandLine && wcscmp(commandLine, L"--verify-dialog-runtime") == 0)
-        return HasTaskDialogRuntime() ? 0 : 4;
-    if (commandLine && *commandLine) {
-        Alert(L"Desteklenmeyen komut satırı seçeneği.");
-        return 2;
+
+// Explicit bridge for the UI file. This preserves the verified embedded
+// payload and safe native operations; it does NOT expose any game patch API.
+bool RagnarVerify() { return VerifyEmbeddedSetup(); }
+bool RagnarValidTarget(std::wstring& value) { return SafeTarget(value); }
+std::wstring RagnarDefaultTarget() { return DefaultFolder(); }
+std::wstring RagnarTempFolder() { return MakeTempDirectory(); }
+bool RagnarExtractSetup(const std::wstring& path) { return ExtractSetup(path); }
+bool RagnarDialogAvailable() { return HasTaskDialogRuntime(); }
+std::wstring RagnarLauncherPath(const std::wstring& root) {
+    return root + L"\\RagnarClassicPreview.exe";
+}
+bool RagnarSilentInstall(const std::wstring& setup, const std::wstring& target,
+                         DWORD& exitCode, std::wstring& error) {
+    // Velopack official CLI: --silent prevents second splash and post-install launch.
+    std::wstring args = L"\"" + setup + L"\" --silent --installto \"" + target + L"\"";
+    std::vector<wchar_t> buffer(args.begin(), args.end());
+    buffer.push_back(0);
+    STARTUPINFOW startup{sizeof(startup)};
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(setup.c_str(), buffer.data(), nullptr, nullptr, FALSE, 0,
+                        nullptr, nullptr, &startup, &process)) {
+        error = L"Kurulum motoru başlatılamadı. Windows hatası: " +
+                std::to_wstring(GetLastError());
+        return false;
     }
-    const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    if (FAILED(init)) { Alert(L"Windows iletişim sistemi hazırlanamadı."); return 4; }
-    if (!HasTaskDialogRuntime()) {
-        Alert(L"Windows Common Controls v6 etkinleştirilemedi. "
-              L"Kurulum güvenli şekilde durduruldu.");
-        CoUninitialize();
-        return 4;
+    DWORD waited = WaitForSingleObject(process.hProcess, INFINITE);
+    bool okay = waited == WAIT_OBJECT_0 &&
+                GetExitCodeProcess(process.hProcess, &exitCode);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    if (!okay || exitCode != 0) {
+        error = L"Velopack kurulum hatası: " + std::to_wstring(exitCode);
+        return false;
     }
-    const int code = InstallInteractive();
-    CoUninitialize();
-    return code;
+    auto updater = target + L"\\Update.exe";
+    auto launcher = RagnarLauncherPath(target);
+    if (GetFileAttributesW(updater.c_str()) == INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesW(launcher.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        error = L"Kurulumdan sonra gerekli Ragnar dosyaları bulunamadı.";
+        return false;
+    }
+    return true;
+}
+bool RagnarCreateShortcut(bool desktop, const std::wstring& root) {
+    const auto directory = KnownFolder(desktop ? FOLDERID_Desktop : FOLDERID_Programs);
+    if (directory.empty()) return false;
+    const auto path = directory + L"\\" + kShortcutFile;
+    // Never overwrite a user-owned shortcut. Reinstall can keep an existing one.
+    if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) return false;
+    IShellLinkW* link = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&link)))) return false;
+    bool saved = false;
+    if (SUCCEEDED(link->SetPath(RagnarLauncherPath(root).c_str())) &&
+        SUCCEEDED(link->SetDescription(L"Ragnar Classic Visual Preview (QA)"))) {
+        IPersistFile* persist = nullptr;
+        if (SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(&persist)))) {
+            saved = SUCCEEDED(persist->Save(path.c_str(), TRUE));
+            persist->Release();
+        }
+    }
+    link->Release();
+    return saved;
+}
+bool RagnarOpenInstalled(const std::wstring& root, DWORD& error) {
+    const auto exe = RagnarLauncherPath(root);
+    if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        error = ERROR_FILE_NOT_FOUND;
+        return false;
+    }
+    std::wstring command = L"\"" + exe + L"\"";
+    std::vector<wchar_t> args(command.begin(), command.end());
+    args.push_back(0);
+    STARTUPINFOW startup{sizeof(startup)};
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(exe.c_str(), args.data(), nullptr, nullptr, FALSE, 0,
+                        nullptr, nullptr, &startup, &process)) {
+        error = GetLastError();
+        return false;
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return true;
 }
