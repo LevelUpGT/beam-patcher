@@ -45,7 +45,7 @@ class RagnarClassicThemeTests(unittest.TestCase):
         self.assertIn("const previewClassic = !isTauri &&", HTML)
         self.assertIn("get('theme') === 'ragnar-classic'", HTML)
         self.assertIn("const isThemePreview = previewTheme || previewClassic;", HTML)
-        self.assertIn("classList.toggle('theme-preview-only', isThemePreview)", HTML)
+        self.assertIn("classList.toggle('theme-preview-only', isThemePreview || previewOnlyRuntime)", HTML)
         self.assertIn("if (isThemePreview) {", HTML)
         self.assertIn("'#play-button, .btn-action-small, #register-btn-main'", HTML)
         self.assertIn("button.disabled = true", HTML)
