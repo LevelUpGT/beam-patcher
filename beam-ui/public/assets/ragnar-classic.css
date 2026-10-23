@@ -409,3 +409,60 @@ body.theme-ragnar-classic.theme-preview-only .btn-play-now { cursor: not-allowed
     body.theme-ragnar-classic .btn-action-small { right: 90px; }
     body.theme-ragnar-classic .classic-ad-card { font-size: 12px; }
 }
+
+/* Native Windows QA installer: no external images or live websites. */
+body.theme-ragnar-classic .classic-qa-announcement {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    height: 100%;
+    min-height: 240px;
+    text-align: center;
+    padding: 26px;
+    background: radial-gradient(ellipse at 50% 20%, #22373c, #191a1b 74%);
+    color: #efefef;
+}
+body.theme-ragnar-classic .classic-qa-announcement small {
+    color: #89c8c4;
+    font-size: 11px;
+    letter-spacing: 2px;
+}
+body.theme-ragnar-classic .classic-qa-announcement strong {
+    font-size: 29px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    line-height: 1.25;
+    color: #13efcc;
+    text-shadow: 0 0 14px rgba(0, 234, 202, .17);
+}
+body.theme-ragnar-classic .classic-qa-announcement p {
+    font-size: 15px;
+    color: #dbdbdb;
+}
+body.theme-ragnar-classic .classic-qa-announcement .classic-qa-disclaimer {
+    max-width: 400px;
+    line-height: 1.6;
+    color: #a4b7b6;
+    font-size: 12px;
+}
+body.theme-ragnar-classic .classic-qa-mini {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 10px;
+    text-align: center;
+    height: 100%;
+    width: 100%;
+    color: #00f0d6;
+    background: radial-gradient(circle at 60% 10%, #303d42, #121719);
+    font-size: 17px;
+    font-weight: 900;
+}
+body.theme-ragnar-classic .grid-image-item:nth-child(3) .classic-qa-mini {
+    color: #fff;
+}
+body.theme-ragnar-classic.theme-preview-only button:disabled {
+    cursor: not-allowed;
+}
