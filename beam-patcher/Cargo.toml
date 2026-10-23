@@ -20,3 +20,7 @@ clap = { version = "4.4", features = ["derive"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winres = "0.1"
+
+[features]
+# A standalone UI-only test installer: no patch, launch, or filesystem-writing commands.
+preview-only = ["beam-ui/preview-only"]
