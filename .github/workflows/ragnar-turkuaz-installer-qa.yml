@@ -87,7 +87,40 @@ jobs:
           Copy-Item 'beam/target/release/beam-patcher.exe' 'build/preview-payload/RagnarClassicPreview.exe'
           $env:VELOPACK_TEMP = (Join-Path $env:RUNNER_TEMP 'ragnar-vpk-tmp')
           New-Item -ItemType Directory -Force $env:VELOPACK_TEMP | Out-Null
-          & (Join-Path $toolDir 'vpk.exe') --legacyConsole true --yes true --skip-updates true pack --runtime win-x64 --packId levelupgt.ragnar-classic-preview --packTitle 'Ragnar Classic Visual Preview' --packVersion 0.1.0 --packDir build/preview-payload --mainExe RagnarClassicPreview.exe --outputDir build/velopack --delta none --skipVeloAppCheck true
+          # Use a project-specific icon if supplied; otherwise keep Beam's existing icon.
+          $customIcon = 'beam/tools/windows/ragnar-turkuaz-qa/branding/icon.ico'
+          $icon = if (Test-Path $customIcon) { $customIcon } else { 'beam/beam-ui/icons/icon.ico' }
+          if (-not (Test-Path $icon)) { throw 'BRANDING_ICON_MISSING' }
+          # Original QA splash artwork, generated on the Windows build runner.
+          # No external images, ads, CDN, or network data are embedded.
+          Add-Type -AssemblyName System.Drawing
+          $bitmap = [System.Drawing.Bitmap]::new(600, 310)
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+          $rect = [System.Drawing.Rectangle]::new(0, 0, 600, 310)
+          $background = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+            $rect,[System.Drawing.Color]::FromArgb(14,22,42),
+            [System.Drawing.Color]::FromArgb(15,105,114),20)
+          $graphics.FillRectangle($background,$rect)
+          $lineBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(48,224,197))
+          $titleBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::White)
+          $mutedBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(193,221,223))
+          $title = [System.Drawing.Font]::new('Segoe UI',36,[System.Drawing.FontStyle]::Bold)
+          $subtitle = [System.Drawing.Font]::new('Segoe UI',15,[System.Drawing.FontStyle]::Regular)
+          $small = [System.Drawing.Font]::new('Segoe UI',11,[System.Drawing.FontStyle]::Regular)
+          try {
+            $graphics.DrawString('RAGNAR',$title,$titleBrush,45,62)
+            $graphics.FillRectangle($lineBrush,48,153,240,4)
+            $graphics.DrawString('Ragnarok Online',$subtitle,$titleBrush,47,183)
+            $graphics.DrawString('Classic Visual Preview  |  Turkuaz QA',$small,$mutedBrush,49,235)
+            $splash = (Join-Path (Resolve-Path 'build').Path 'ragnar-splash.png')
+            $bitmap.Save($splash,[System.Drawing.Imaging.ImageFormat]::Png)
+          } finally {
+            $small.Dispose(); $subtitle.Dispose(); $title.Dispose()
+            $background.Dispose(); $lineBrush.Dispose(); $titleBrush.Dispose(); $mutedBrush.Dispose()
+            $graphics.Dispose(); $bitmap.Dispose()
+          }
+          & (Join-Path $toolDir 'vpk.exe') --legacyConsole true --yes true --skip-updates true pack --runtime win-x64 --packId levelupgt.ragnar-classic-preview --packTitle 'Ragnar Classic Visual Preview' --packVersion 0.1.0 --packDir build/preview-payload --mainExe RagnarClassicPreview.exe --outputDir build/velopack --delta none --skipVeloAppCheck true --icon $icon --splashImage $splash --shortcuts Desktop,StartMenuRoot
           if ($LASTEXITCODE -ne 0) { throw 'VELOPACk_PACK_FAILED' }
           $setup = @(Get-ChildItem -LiteralPath build/velopack -File -Filter '*Setup.exe')
           $full = @(Get-ChildItem -LiteralPath build/velopack -File -Filter '*-full.nupkg')
@@ -147,50 +180,51 @@ jobs:
           Remove-Item -LiteralPath $manifest,$sig -Force
           Write-Host 'RAGNAR_TURKUAZ_REAL_SIGNED_LOCAL_VELOPACK_QA_OK'
 
-      - name: Archive, inspect and hash standalone unsigned QA bundle
+      - name: Build compact one-file Ragnar setup wizard
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $root = 'build/RagnarTurkuazQA'
-          if (Test-Path "$root/qa/installer-manifest.yml") { throw 'CI_LOCAL_MANIFEST_MUST_NOT_SHIP' }
-          if (Test-Path "$root/qa/installer-manifest.yml.p7s") { throw 'CI_LOCAL_SIGNATURE_MUST_NOT_SHIP' }
-          $important = @(
-            'TurkuazInstaller.Bootstrapper.exe',
-            'app/TurkuazInstaller.WinUI.exe',
-            'cli/TurkuazInstaller.Cli.exe',
-            'qa/Ragnar.QaProvisioner.exe',
-            'qa/ui-profile.yml',
-            'payload/RagnarClassicPreview-Setup.exe',
-            'Start-RagnarTurkuazQA.cmd',
-            'Uninstall-RagnarTurkuazQA.cmd'
-          )
-          foreach ($relative in $important) {
-            if (-not (Test-Path (Join-Path $root $relative) -PathType Leaf)) { throw "MISSING_ARTIFACT_FILE_$relative" }
-          }
-          $all = @(Get-ChildItem -LiteralPath $root -Recurse -File)
-          $all | ForEach-Object {
-            "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $([System.IO.Path]::GetRelativePath((Resolve-Path $root).Path,$_.FullName))"
-          } | Set-Content -LiteralPath "$root/SHA256SUMS.txt" -Encoding utf8
-          New-Item -ItemType Directory -Force 'dist' | Out-Null
-          $zip = 'dist/Ragnar-TurkuazInstaller-QA-win-x64.zip'
-          Compress-Archive -Path "$root/*" -DestinationPath $zip -CompressionLevel Optimal
-          if (-not (Test-Path $zip)) { throw 'TURKUAZ_QA_ZIP_MISSING' }
-          New-Item -ItemType Directory -Force 'build/zip-inspection' | Out-Null
-          Expand-Archive -LiteralPath $zip -DestinationPath 'build/zip-inspection'
-          foreach ($relative in $important) {
-            if (-not (Test-Path (Join-Path 'build/zip-inspection' $relative))) { throw "ZIP_MISSING_$relative" }
-          }
-          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "Ragnar-TurkuazInstaller-QA-win-x64.zip SHA256 $hash commit $env:GITHUB_SHA" | Set-Content 'dist/CHECKSUM.txt'
-          Write-Host "RAGNAR_TURKUAZ_ZIP_OK files=$($all.Count) zip_sha256=$hash"
+          $setup = (Resolve-Path "$root/payload/RagnarClassicPreview-Setup.exe").Path
+          $sha = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          $source = (Resolve-Path 'beam/tools/windows/ragnar-turkuaz-qa/RagnarSetupWizard.cpp').Path
+          $icon = if (Test-Path 'beam/tools/windows/ragnar-turkuaz-qa/branding/icon.ico') {
+            (Resolve-Path 'beam/tools/windows/ragnar-turkuaz-qa/branding/icon.ico').Path
+          } else { (Resolve-Path 'beam/beam-ui/icons/icon.ico').Path }
+          New-Item -ItemType Directory -Force 'build/wizard','dist' | Out-Null
+          "#define RAGNAR_EMBEDDED_SETUP_SHA256 L`"$sha`"" |
+            Set-Content -LiteralPath 'build/wizard/setup_hash.h' -Encoding ascii
+          $setupRc = $setup.Replace('\','\\')
+          $iconRc = $icon.Replace('\','\\')
+          @"
+          101 RCDATA "$setupRc"
+          1 ICON "$iconRc"
+          "@ | Set-Content -LiteralPath 'build/wizard/setup.rc' -Encoding utf8
+          rc /nologo /fo build/wizard/setup.res build/wizard/setup.rc
+          if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_RC_EMBED_FAILED' }
+          cl /nologo /std:c++17 /utf-8 /O2 /EHsc /MT /DUNICODE /D_UNICODE /I build/wizard $source build/wizard/setup.res /link /SUBSYSTEM:WINDOWS /OUT:dist/RagnarClassic-Turkuaz-Setup.exe
+          if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_NATIVE_WIZARD_BUILD_FAILED' }
+          & 'dist/RagnarClassic-Turkuaz-Setup.exe' --verify-payload
+          if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_EMBEDDED_SHA256_CHECK_FAILED' }
+          $single = @(Get-ChildItem -LiteralPath dist -File -Filter '*.exe')
+          if ($single.Count -ne 1) { throw 'SINGLE_INSTALLER_INVENTORY_INVALID' }
+          $size = $single[0].Length
+          if ($size -gt 50000000 -or $size -lt 1000000) { throw "SINGLE_INSTALLER_SIZE_UNEXPECTED_$size" }
+          $outSha = (Get-FileHash $single[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "EXE=$($single[0].Name)" | Set-Content 'dist/CHECKSUM.txt'
+          "SHA256=$outSha" | Add-Content 'dist/CHECKSUM.txt'
+          "COMMIT=$env:GITHUB_SHA" | Add-Content 'dist/CHECKSUM.txt'
+          "PayloadSHA256=$sha" | Add-Content 'dist/CHECKSUM.txt'
+          "TEST_ONLY=unsigned; no production release" | Add-Content 'dist/CHECKSUM.txt'
+          Write-Host "RAGNAR_TURKUAZ_COMPACT_WIZARD_OK bytes=$size sha256=$outSha backend=Velopack_verified_by_Turkuaz_QA"
 
-      - name: Upload short-lived unsigned Turkuaz QA bundle
+      - name: Upload only user-facing installer EXE
         uses: actions/upload-artifact@v4
         with:
-          name: Ragnar-TurkuazInstaller-Windows-x64-TEST-ONLY
+          name: RagnarClassic-Turkuaz-Single-EXE-TEST-ONLY
           path: |
-            dist/Ragnar-TurkuazInstaller-QA-win-x64.zip
+            dist/RagnarClassic-Turkuaz-Setup.exe
             dist/CHECKSUM.txt
           if-no-files-found: error
-          retention-days: 2
+          retention-days: 3
           compression-level: 0
