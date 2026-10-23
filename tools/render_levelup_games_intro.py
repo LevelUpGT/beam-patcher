@@ -2,7 +2,7 @@
 # Dosya Yolu: tools/render_levelup_games_intro.py
 # Amac: LevelUp Games markali QA giris videosunu Beam medya klasorunde uretmek
 # Modul - Python / FFmpeg Media Tool
-# Version: 0.1.0
+# Version: 0.1.1
 # Aciklama: Indirilecek video gerekmeden kaynak kodundan MP4 uretir, mevcut dosyayi korur
 # Bagimli Oldugu Katman: Beam UI | ffmpeg drawtext/libx264/aac
 
@@ -93,8 +93,8 @@ def render(output: Path):
             "note": "Generated Beam UI candidate, NOT the canonical fixed-SHA client intro MP4.",
         }
     except BaseException:
-        # If ffmpeg fails, remove only the file this tool attempted to create.
-        output.unlink(missing_ok=True)
+        # Keep any failed/partial candidate for explicit inspection; no deletion of
+        # an output another process may have created after the initial check.
         raise
 
 
