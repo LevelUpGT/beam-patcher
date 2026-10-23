@@ -1081,7 +1081,9 @@
     </style>
     <!-- Explicit opt-in only: preserves the existing Beam appearance by default. -->
     <link id="ragnar-legacy-theme-css" rel="stylesheet" href="assets/ragnar-legacy.css" disabled>
-    <link id="ragnar-classic-theme-css" rel="stylesheet" href="assets/ragnar-classic.css" disabled>
+    <!-- Keep this CSS loaded from startup: it is scoped to body.theme-ragnar-classic.
+         WebView2 may not reliably activate a stylesheet initially marked disabled. -->
+    <link id="ragnar-classic-theme-css" rel="stylesheet" href="assets/ragnar-classic.css">
 </head>
 <body>
     <video id="video-background" autoplay loop muted playsinline></video>
@@ -1238,7 +1240,9 @@
             const sheet = document.getElementById('ragnar-legacy-theme-css');
             const classicSheet = document.getElementById('ragnar-classic-theme-css');
             if (sheet) sheet.disabled = !legacy;
-            if (classicSheet) classicSheet.disabled = !classic;
+            // Scope selectors to the body class instead of toggling the native stylesheet.
+            // The CSS must already be available before async Tauri config is received.
+            if (classicSheet) classicSheet.disabled = false;
             document.body.classList.toggle('theme-ragnar-legacy', legacy);
             document.body.classList.toggle('theme-ragnar-classic', classic);
             document.body.classList.toggle('theme-preview-only', isThemePreview || previewOnlyRuntime);
