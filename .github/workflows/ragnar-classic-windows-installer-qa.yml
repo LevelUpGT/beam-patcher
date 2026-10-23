@@ -1,0 +1,91 @@
+# Dosya Yolu: .github/workflows/ragnar-classic-windows-installer-qa.yml
+# Amac: Build unsigned Windows installer for read-only Ragnar Classic theme preview
+# Modul - GitHub Actions Windows Inno Setup CI
+# Version: 0.1.0-candidate
+# Aciklama: No release, no server/publishing permissions, no player patches.
+# Bagimli Oldugu Katman: cargo preview-only feature | tools/windows/ragnar-classic-preview.iss
+name: Ragnar Classic Windows Preview Installer QA
+
+on:
+  push:
+    branches:
+      - test/ragnar-classic-windows-installer-20261023
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-installer:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout locked test branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install stable Rust (MSVC)
+        uses: dtolnay/rust-toolchain@stable
+      - name: Assert preview-only Rust command boundaries
+        shell: pwsh
+        run: |
+          $app = Get-Content beam-patcher/src/main.rs -Raw
+          $ui = Get-Content beam-ui/src/lib.rs -Raw
+          if (-not $app.Contains('#[cfg(feature = "preview-only")]') -or
+              -not $ui.Contains('commands::get_preview_mode')) {
+            throw 'PREVIEW_FEATURE_BOUNDARY_ABSENT'
+          }
+          $preview = [regex]::Match($ui, '(?s)#\[cfg\(feature = "preview-only"\)\]\s*\{(.+?)#\[cfg\(not\(feature = "preview-only"\)\)\]')
+          if (-not $preview.Success) { throw 'NO_RESTRICTED_NATIVE_COMMAND_HANDLER' }
+          foreach ($forbidden in @('commands::start_patching', 'commands::launch_game',
+                'commands::manual_patch', 'commands::set_game_directory',
+                'commands::perform_update', 'commands::reset_cache')) {
+            if ($preview.Value.Contains($forbidden)) { throw "UNSAFE_QA_NATIVE_HANDLER_$forbidden" }
+          }
+          Write-Host 'NATIVE_QA_COMMAND_GUARD_OK'
+      - name: Ragnar classic and legacy source tests
+        shell: pwsh
+        run: |
+          py -3 -B -m unittest discover -s tools/tests -p 'test_ragnar_classic_theme.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'CLASSIC_THEME_TEST_FAILED' }
+          py -3 -B -m unittest discover -s tools/tests -p 'test_ragnar_legacy_theme.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'LEGACY_THEME_TEST_FAILED' }
+      - name: Build read-only native preview (Windows x64)
+        shell: pwsh
+        run: |
+          cargo build --release -p beam-patcher --features preview-only
+          if ($LASTEXITCODE -ne 0) { throw 'WINDOWS_NATIVE_BUILD_FAILED' }
+          if (-not (Test-Path 'target/release/beam-patcher.exe')) { throw 'WINDOWS_BINARY_MISSING' }
+      - name: Install Inno Setup compiler
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'INNO_SETUP_INSTALL_FAILED' }
+          }
+      - name: Build independent user-level setup EXE
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Inno Setup 6\ISCC.exe'
+          & $iscc 'tools\windows\ragnar-classic-preview.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'INNO_COMPILATION_FAILED' }
+          $file = 'dist\ragnar-classic-preview\RagnarClassicBeamPreviewSetup-0.1.0.exe'
+          if (-not (Test-Path $file)) { throw 'INSTALLER_NOT_CREATED' }
+          $sha = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+          $len = (Get-Item $file).Length
+          Write-Host "RAGNAR_CLASSIC_PREVIEW_INSTALLER_OK bytes=$len sha256=$sha backend=disabled"
+          "Ragnar Classic Visual Preview (Windows x64, UNSIGNED)" | Set-Content dist\ragnar-classic-preview\README.txt
+          "Preview only: no patch/game launch; installs to user AppData, not the game folder." | Add-Content dist\ragnar-classic-preview\README.txt
+          "File: RagnarClassicBeamPreviewSetup-0.1.0.exe" | Add-Content dist\ragnar-classic-preview\README.txt
+          "SHA256: $sha" | Add-Content dist\ragnar-classic-preview\README.txt
+          "Commit: $env:GITHUB_SHA" | Add-Content dist\ragnar-classic-preview\README.txt
+      - name: Upload unsigned preview installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RagnarClassicBeamPreview-Windows-x64-unsigned
+          path: |
+            dist/ragnar-classic-preview/RagnarClassicBeamPreviewSetup-0.1.0.exe
+            dist/ragnar-classic-preview/README.txt
+          if-no-files-found: error
+          retention-days: 14
