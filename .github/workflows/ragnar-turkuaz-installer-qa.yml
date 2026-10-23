@@ -180,6 +180,11 @@ jobs:
           Remove-Item -LiteralPath $manifest,$sig -Force
           Write-Host 'RAGNAR_TURKUAZ_REAL_SIGNED_LOCAL_VELOPACK_QA_OK'
 
+      - name: Initialize MSVC x64 toolchain for native single EXE
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Build compact one-file Ragnar setup wizard
         shell: pwsh
         run: |
@@ -204,7 +209,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_RC_EMBED_FAILED' }
           cl /nologo /std:c++17 /utf-8 /O2 /EHsc /MT /DUNICODE /D_UNICODE /I build/wizard $source build/wizard/setup.res /link /SUBSYSTEM:WINDOWS /OUT:dist/RagnarClassic-Turkuaz-Setup.exe
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_NATIVE_WIZARD_BUILD_FAILED' }
-          & 'dist/RagnarClassic-Turkuaz-Setup.exe' --verify-payload
+          & (Resolve-Path 'dist/RagnarClassic-Turkuaz-Setup.exe').Path --verify-payload
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_EMBEDDED_SHA256_CHECK_FAILED' }
           $single = @(Get-ChildItem -LiteralPath dist -File -Filter '*.exe')
           if ($single.Count -ne 1) { throw 'SINGLE_INSTALLER_INVENTORY_INVALID' }
