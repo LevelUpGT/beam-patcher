@@ -140,8 +140,10 @@ void Paint(HDC dc) {
         Print(dc, state.body, RGB(255,255,255),
               L"Kurulum tamamlandı", 44, 220, 670, 45);
         Print(dc, state.small, RGB(218,242,235),
-              L"Ragnar Classic önizlemesi hazır. İstersen şimdi açabilir\n"
-              L"veya Kapat seçeneğiyle kurulumdan çıkabilirsin.",
+              state.error.empty()
+                  ? L"Ragnar Classic önizlemesi hazır. İstersen şimdi açabilir\n"
+                    L"veya Kapat seçeneğiyle kurulumdan çıkabilirsin."
+                  : state.error.c_str(),
               44, 278, 666, 72, DT_WORDBREAK);
         break;
       case Page::Failed:
@@ -166,6 +168,8 @@ bool SaveTarget() {
     return true;
 }
 void DoWork(std::wstring target, bool desktop, bool start, HWND window) {
+    // Shell link COM operations run on the background worker.
+    const HRESULT comResult = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     auto result = std::make_unique<Result>();
     auto temp = RagnarTempFolder();
     if (temp.empty()) result->message = L"Geçici klasör oluşturulamadı.";
@@ -189,6 +193,7 @@ void DoWork(std::wstring target, bool desktop, bool start, HWND window) {
         DeleteFileW(setup.c_str());
         RemoveDirectoryW(temp.c_str());
     }
+    if (SUCCEEDED(comResult)) CoUninitialize();
     PostMessageW(window, kDone, 0, reinterpret_cast<LPARAM>(result.release()));
 }
 void StartWork() {
