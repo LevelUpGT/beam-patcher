@@ -374,7 +374,7 @@ bool RagnarSilentInstall(const std::wstring& setup, const std::wstring& target,
     if (!CreateProcessW(setup.c_str(), buffer.data(), nullptr, nullptr, FALSE, 0,
                         nullptr, nullptr, &startup, &process)) {
         error = L"Kurulum motoru başlatılamadı. Windows hatası: " +
-                std::to_wstring(GetLastError()) + L"\\nGünlük: " + logPath;
+                std::to_wstring(GetLastError()) + L"\nGünlük: " + logPath;
         return false;
     }
     DWORD waited = WaitForSingleObject(process.hProcess, INFINITE);
@@ -384,7 +384,7 @@ bool RagnarSilentInstall(const std::wstring& setup, const std::wstring& target,
     CloseHandle(process.hProcess);
     if (!okay || exitCode != 0) {
         error = L"Velopack kurulum hatası: " + std::to_wstring(exitCode) +
-                L"\\nGünlük: " + logPath;
+                L"\nGünlük: " + logPath;
         return false;
     }
     auto updater = target + L"\\Update.exe";

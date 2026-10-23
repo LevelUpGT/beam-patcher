@@ -138,3 +138,37 @@ The corrected portable single EXE:
 The previously published EXE with SHA-256
 `aa2c2903376da4c1e524340285a391285994715e8e8cfb68c17b0d81ed2fa9f8`
 is superseded and should not be used for testing.
+
+## Single-window installer UX (QA v0.3.0)
+
+The full-screen-style splash is **the installer**, not an additional
+Velopack splash. It is one persistent Windows native window with:
+Welcome -> Options -> Installing -> Complete/Failed. Only native
+Windows folder picking and actionable error dialogs can open a separate
+system dialog. It does not copy Adobe artwork.
+
+The native front end invokes the embedded, SHA-256 checked Velopack
+Setup.exe using **`--silent --installto`**. Velopack's own splash and
+post-install automatic app start are suppressed. The preview main
+executable also short-circuits `--veloapp-*` lifecycle hooks so that
+Velopack install hooks never open Beam's normal window. The preview
+program can be launched **only after completion** when the user clicks
+"RAGNAR'I AÇ".
+
+`vpk pack --shortcuts None` disables Velopack-managed automatic
+shortcuts in this test package. The user can opt into Desktop, Start
+Menu, both, or neither. Shortcut creation is performed only after
+successful installation with the Windows ShellLink APIs. Existing
+shortcuts owned by other programs/users are not overwritten. Tests
+must inspect real Windows shortcut behavior and future update/repair
+semantics before any production rollout.
+
+The progress animation is **indeterminate** by design: Velopack 1.2
+Setup.exe exposes no authoritative fractional progress through this
+wrapper. No fabricated completion percentage is displayed. During
+installation the window cannot be dismissed with the close button;
+the worker waits for the process exit and reports its real status.
+On failure, Velopack's local log location is shown in the error page.
+CI checks the view's real hidden-window HWND/controls with
+`--verify-ui-contract` but does not claim this is an end-user
+Windows 10 pixel smoke.

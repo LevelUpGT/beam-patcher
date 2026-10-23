@@ -57,6 +57,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'LEGACY_TEST_FAILED' }
           $app = Get-Content beam-patcher/src/main.rs -Raw
           $ui = Get-Content beam-ui/src/lib.rs -Raw
+          if (-not $app.Contains('starts_with("--veloapp-")')) {
+            throw 'PREVIEW_VELOPACK_INSTALL_HOOK_GUARD_MISSING'
+          }
           if (-not $app.Contains('#[cfg(feature = "preview-only")]') -or
               -not $ui.Contains('commands::get_preview_mode')) { throw 'PREVIEW_BOUNDARY_MISSING' }
           $preview = [regex]::Match($ui, '(?s)#\[cfg\(feature = "preview-only"\)\]\s*\{(.+?)#\[cfg\(not\(feature = "preview-only"\)\)\]')
@@ -122,6 +125,9 @@ jobs:
           }
           & (Join-Path $toolDir 'vpk.exe') --legacyConsole true --yes true --skip-updates true pack --runtime win-x64 --packId levelupgt.ragnar-classic-preview --packTitle 'Ragnar Classic Visual Preview' --packVersion 0.1.0 --packDir build/preview-payload --mainExe RagnarClassicPreview.exe --outputDir build/velopack --delta none --skipVeloAppCheck true --icon $icon --splashImage $splash --shortcuts None
           if ($LASTEXITCODE -ne 0) { throw 'VELOPACk_PACK_FAILED' }
+          if (-not (Select-String -Path 'beam/.github/workflows/ragnar-turkuaz-installer-qa.yml' -Pattern '--shortcuts None' -SimpleMatch -Quiet)) {
+            throw 'VELOPACK_SHORTCUTS_MUST_BE_USER_OPT_IN'
+          }
           $setup = @(Get-ChildItem -LiteralPath build/velopack -File -Filter '*Setup.exe')
           $full = @(Get-ChildItem -LiteralPath build/velopack -File -Filter '*-full.nupkg')
           if ($setup.Count -ne 1 -or $full.Count -ne 1) { throw 'VELOPACk_OUTPUT_INVENTORY_INVALID' }
