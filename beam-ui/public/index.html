@@ -1227,6 +1227,7 @@
         const previewClassic = !isTauri &&
             new URLSearchParams(window.location.search).get('theme') === 'ragnar-classic';
         const isThemePreview = previewTheme || previewClassic;
+        let previewOnlyRuntime = false; // Set solely by Rust compile-time feature.
 
         function applyConfiguredTheme(config) {
             // The browser-only query is never honored by a real Tauri app.
@@ -1240,9 +1241,9 @@
             if (classicSheet) classicSheet.disabled = !classic;
             document.body.classList.toggle('theme-ragnar-legacy', legacy);
             document.body.classList.toggle('theme-ragnar-classic', classic);
-            document.body.classList.toggle('theme-preview-only', isThemePreview);
-            if (isThemePreview) {
-                // Do not simulate game launch, manual patch or cache writes.
+            document.body.classList.toggle('theme-preview-only', isThemePreview || previewOnlyRuntime);
+            if (isThemePreview || previewOnlyRuntime) {
+                // The Rust preview build does not register write/patch/game commands.
                 for (const button of document.querySelectorAll(
                     '#play-button, .btn-action-small, #register-btn-main'
                 )) button.disabled = true;
@@ -1806,9 +1807,49 @@
         }
 
         window.addEventListener('DOMContentLoaded', async () => {
+            if (isTauri) {
+                // This action exists only in the self-contained test build.
+                // In normal Beam versions, a missing command simply means false.
+                try { previewOnlyRuntime = await invoke('get_preview_mode') === true; }
+                catch (_) { previewOnlyRuntime = false; }
+            }
+            if (previewOnlyRuntime) {
+                // Never access patch URLs, external news, server status, config
+                // persistence, or the user's game folder in the native preview.
+                const config = await invoke('get_config');
+                applyConfiguredTheme(config);
+                document.getElementById('logo-text').textContent =
+                    config.app.server_name || 'Ragnar Ragnarok Online';
+                const news = document.getElementById('news-cards');
+                news.innerHTML = `
+                    <section class="classic-qa-announcement">
+                        <small>BEAM PATCHER • VISUAL TEST</small>
+                        <strong>RAGNAR RAGNAROK ONLINE</strong>
+                        <p>Overlook Dungeon · Daily Rewards · Classic Launcher</p>
+                        <p class="classic-qa-disclaimer">Bu bir arayüz testidir.
+                        İndirme, patch ve oyun başlatma devre dışıdır.</p>
+                    </section>`;
+                for (const [index, card] of
+                    Array.from(document.querySelectorAll('.grid-image-item')).entries()) {
+                    card.innerHTML = '<div class="classic-qa-mini">' +
+                        (index % 2 === 0 ? 'OVERLOOK DUNGEON' : 'DAILY REWARDS') + '</div>';
+                    card.onclick = null;
+                }
+                document.getElementById('progress-bar').style.width = '100%';
+                const notice = document.getElementById('progress-label');
+                notice.textContent = 'TEST SÜRÜMÜ — Sunucu bağlantısı kurulmaz';
+                // Disable ALL controls, including filters and social anchors.
+                document.querySelectorAll('button, input, a').forEach(el => {
+                    el.disabled = true;
+                    el.style.pointerEvents = 'none';
+                });
+                document.getElementById('play-button').textContent = 'DEMO';
+                return;
+            }
+
             updateServerStatus();
             setInterval(updateServerStatus, 30000);
-            
+
             let config = await invoke('get_config');
             
             const needsSetup = await invoke('check_initial_setup');
