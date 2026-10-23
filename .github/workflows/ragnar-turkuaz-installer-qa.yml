@@ -1,0 +1,196 @@
+# Dosya Yolu: .github/workflows/ragnar-turkuaz-installer-qa.yml
+# Amac: Ragnar Classic read-only preview icin TurkuazInstaller Community kullanarak Windows QA paketi uretmek
+# Modul - GitHub Actions Windows QA YAML
+# Version: 0.1.0-qa
+# Aciklama: Preview-only Rust + Velopack + pinned TurkuazInstaller WinUI/CLI; ephemeral local trust, no release
+# Bagimli Oldugu Katman: Rust preview-only | TurkuazInstaller Community | Velopack
+
+name: Ragnar TurkuazInstaller Windows QA
+
+on:
+  push:
+    branches:
+      - test/ragnar-turkuaz-installer-qa-20261024
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ragnar-turkuaz-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-turkuaz-qa:
+    runs-on: windows-2025
+    timeout-minutes: 55
+    steps:
+      - name: Checkout Beam preview only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: beam
+
+      - name: Checkout pinned Community installer source
+        uses: actions/checkout@v4
+        with:
+          repository: TurkuazLabs/TurkuazInstaller
+          ref: 1048931bf7498ab4d4440414c4463e6ee5e7421e
+          persist-credentials: false
+          path: turkuaz-engine
+
+      - name: Install Rust and .NET 10
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Source tests and fail-closed preview boundaries
+        shell: pwsh
+        working-directory: beam
+        run: |
+          py -3 -B -m unittest discover -s tools/tests -p 'test_ragnar_classic_theme.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'CLASSIC_TEST_FAILED' }
+          py -3 -B -m unittest discover -s tools/tests -p 'test_ragnar_legacy_theme.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'LEGACY_TEST_FAILED' }
+          $app = Get-Content beam-patcher/src/main.rs -Raw
+          $ui = Get-Content beam-ui/src/lib.rs -Raw
+          if (-not $app.Contains('#[cfg(feature = "preview-only")]') -or
+              -not $ui.Contains('commands::get_preview_mode')) { throw 'PREVIEW_BOUNDARY_MISSING' }
+          $preview = [regex]::Match($ui, '(?s)#\[cfg\(feature = "preview-only"\)\]\s*\{(.+?)#\[cfg\(not\(feature = "preview-only"\)\)\]')
+          if (-not $preview.Success) { throw 'UNSAFE_PREVIEW_BRANCH' }
+          foreach ($forbidden in @('commands::start_patching', 'commands::launch_game',
+              'commands::manual_patch', 'commands::set_game_directory',
+              'commands::perform_update', 'commands::reset_cache')) {
+            if ($preview.Value.Contains($forbidden)) { throw "FORBIDDEN_PREVIEW_API_$forbidden" }
+          }
+          Write-Host 'RAGNAR_TURKUAZ_PREVIEW_BOUNDARY_OK'
+
+      - name: Build Beam read-only native Windows preview
+        shell: pwsh
+        working-directory: beam
+        run: |
+          cargo build --release -p beam-patcher --features preview-only
+          if ($LASTEXITCODE -ne 0) { throw 'RUST_PREVIEW_BUILD_FAILED' }
+          if (-not (Test-Path 'target/release/beam-patcher.exe')) { throw 'PREVIEW_EXE_MISSING' }
+
+      - name: Prepare true Velopack preview Setup and full package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $toolDir = Join-Path $env:RUNNER_TEMP 'ragnar-vpk'
+          dotnet tool install vpk --tool-path $toolDir --version 1.2.161
+          if ($LASTEXITCODE -ne 0) { throw 'VPK_INSTALL_FAILED' }
+          New-Item -ItemType Directory -Force 'build/preview-payload','build/velopack' | Out-Null
+          Copy-Item 'beam/target/release/beam-patcher.exe' 'build/preview-payload/RagnarClassicPreview.exe'
+          $env:VELOPACK_TEMP = (Join-Path $env:RUNNER_TEMP 'ragnar-vpk-tmp')
+          New-Item -ItemType Directory -Force $env:VELOPACK_TEMP | Out-Null
+          & (Join-Path $toolDir 'vpk.exe') --legacyConsole true --yes true --skip-updates true pack --runtime win-x64 --packId levelupgt.ragnar-classic-preview --packTitle 'Ragnar Classic Visual Preview' --packVersion 0.1.0 --packDir build/preview-payload --mainExe RagnarClassicPreview.exe --outputDir build/velopack --delta none --skipVeloAppCheck true
+          if ($LASTEXITCODE -ne 0) { throw 'VELOPACk_PACK_FAILED' }
+          $setup = @(Get-ChildItem -LiteralPath build/velopack -File -Filter '*Setup.exe')
+          $full = @(Get-ChildItem -LiteralPath build/velopack -File -Filter '*-full.nupkg')
+          if ($setup.Count -ne 1 -or $full.Count -ne 1) { throw 'VELOPACk_OUTPUT_INVENTORY_INVALID' }
+          New-Item -ItemType Directory -Force 'build/RagnarTurkuazQA/payload' | Out-Null
+          Copy-Item -LiteralPath $setup[0].FullName -Destination 'build/RagnarTurkuazQA/payload/RagnarClassicPreview-Setup.exe'
+
+      - name: Publish pinned TurkuazInstaller Windows distribution
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish turkuaz-engine/src/TurkuazInstaller.Bootstrapper/TurkuazInstaller.Bootstrapper.csproj -c Release -r win-x64 --self-contained true -o build/bootstrap
+          if ($LASTEXITCODE -ne 0) { throw 'TURKUAZ_BOOTSTRAP_BUILD_FAILED' }
+          dotnet publish turkuaz-engine/src/TurkuazInstaller.WinUI/TurkuazInstaller.WinUI.csproj -c Release -r win-x64 --self-contained true -o build/winui
+          if ($LASTEXITCODE -ne 0) { throw 'TURKUAZ_WINUI_BUILD_FAILED' }
+          dotnet publish turkuaz-engine/src/TurkuazInstaller.Cli/TurkuazInstaller.Cli.csproj -c Release -r win-x64 --self-contained true -o build/cli
+          if ($LASTEXITCODE -ne 0) { throw 'TURKUAZ_CLI_BUILD_FAILED' }
+          ./turkuaz-engine/tools/New-CombinedDistribution.ps1 -BootstrapRoot build/bootstrap -WinUiRoot build/winui -CliRoot build/cli -OutputRoot build/RagnarTurkuazQA/core
+          if (-not $?) { throw 'TURKUAZ_COMBINED_DISTRIBUTION_FAILED' }
+
+      - name: Build QA manifest provisioner and combine package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish beam/tools/windows/ragnar-turkuaz-qa/Ragnar.QaProvisioner.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o build/provisioner
+          if ($LASTEXITCODE -ne 0) { throw 'QA_PROVISIONER_BUILD_FAILED' }
+          $root = 'build/RagnarTurkuazQA'
+          Copy-Item -LiteralPath 'build/RagnarTurkuazQA/core/TurkuazInstaller.Bootstrapper.exe' -Destination $root
+          Copy-Item -LiteralPath 'build/RagnarTurkuazQA/core/app' -Destination $root -Recurse
+          Copy-Item -LiteralPath 'build/RagnarTurkuazQA/core/cli' -Destination $root -Recurse
+          New-Item -ItemType Directory -Force "$root/qa" | Out-Null
+          Copy-Item -LiteralPath 'build/provisioner/Ragnar.QaProvisioner.exe' -Destination "$root/qa/Ragnar.QaProvisioner.exe"
+          Copy-Item -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/ui-profile.yml' -Destination "$root/qa/ui-profile.yml"
+          Copy-Item -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/Start-RagnarTurkuazQA.cmd' -Destination "$root/Start-RagnarTurkuazQA.cmd"
+          Copy-Item -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/Uninstall-RagnarTurkuazQA.cmd' -Destination "$root/Uninstall-RagnarTurkuazQA.cmd"
+          Copy-Item -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/README.md' -Destination "$root/README.md"
+          Remove-Item -LiteralPath "$root/core" -Recurse -Force
+
+      - name: Exercise actual TurkuazInstaller signed local QA install and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = (Resolve-Path 'build/RagnarTurkuazQA').Path
+          & "$root/qa/Ragnar.QaProvisioner.exe" prepare $root
+          if ($LASTEXITCODE -ne 0) { throw 'QA_CMS_PROVISION_FAILED' }
+          $manifest = Join-Path $root 'qa/installer-manifest.yml'
+          $sig = "$manifest.p7s"
+          if (-not (Test-Path $manifest) -or -not (Test-Path $sig)) { throw 'QA_DETACHED_CMS_MISSING' }
+          $target = Join-Path $env:LOCALAPPDATA 'Programs/RagnarClassicTurkuazQA'
+          & "$root/cli/TurkuazInstaller.Cli.exe" install --package levelupgt.ragnar-classic-preview --manifest $manifest --channel stable --target $target
+          if ($LASTEXITCODE -ne 0) { throw 'TURKUAZ_REAL_QA_INSTALL_FAILED' }
+          if (-not (Test-Path (Join-Path $target 'Update.exe'))) { throw 'VELOPACK_INSTALL_NOT_FOUND' }
+          & "$root/cli/TurkuazInstaller.Cli.exe" uninstall --package levelupgt.ragnar-classic-preview
+          if ($LASTEXITCODE -ne 0) { throw 'TURKUAZ_REAL_QA_UNINSTALL_FAILED' }
+          & "$root/qa/Ragnar.QaProvisioner.exe" cleanup $root
+          if ($LASTEXITCODE -ne 0) { throw 'QA_CONFIG_CLEANUP_FAILED' }
+          Remove-Item -LiteralPath $manifest,$sig -Force
+          Write-Host 'RAGNAR_TURKUAZ_REAL_SIGNED_LOCAL_VELOPACK_QA_OK'
+
+      - name: Archive, inspect and hash standalone unsigned QA bundle
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'build/RagnarTurkuazQA'
+          if (Test-Path "$root/qa/installer-manifest.yml") { throw 'CI_LOCAL_MANIFEST_MUST_NOT_SHIP' }
+          if (Test-Path "$root/qa/installer-manifest.yml.p7s") { throw 'CI_LOCAL_SIGNATURE_MUST_NOT_SHIP' }
+          $important = @(
+            'TurkuazInstaller.Bootstrapper.exe',
+            'app/TurkuazInstaller.WinUI.exe',
+            'cli/TurkuazInstaller.Cli.exe',
+            'qa/Ragnar.QaProvisioner.exe',
+            'qa/ui-profile.yml',
+            'payload/RagnarClassicPreview-Setup.exe',
+            'Start-RagnarTurkuazQA.cmd',
+            'Uninstall-RagnarTurkuazQA.cmd'
+          )
+          foreach ($relative in $important) {
+            if (-not (Test-Path (Join-Path $root $relative) -PathType Leaf)) { throw "MISSING_ARTIFACT_FILE_$relative" }
+          }
+          $all = @(Get-ChildItem -LiteralPath $root -Recurse -File)
+          $all | ForEach-Object {
+            "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $([System.IO.Path]::GetRelativePath((Resolve-Path $root).Path,$_.FullName))"
+          } | Set-Content -LiteralPath "$root/SHA256SUMS.txt" -Encoding utf8
+          New-Item -ItemType Directory -Force 'dist' | Out-Null
+          $zip = 'dist/Ragnar-TurkuazInstaller-QA-win-x64.zip'
+          Compress-Archive -Path "$root/*" -DestinationPath $zip -CompressionLevel Optimal
+          if (-not (Test-Path $zip)) { throw 'TURKUAZ_QA_ZIP_MISSING' }
+          New-Item -ItemType Directory -Force 'build/zip-inspection' | Out-Null
+          Expand-Archive -LiteralPath $zip -DestinationPath 'build/zip-inspection'
+          foreach ($relative in $important) {
+            if (-not (Test-Path (Join-Path 'build/zip-inspection' $relative))) { throw "ZIP_MISSING_$relative" }
+          }
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "Ragnar-TurkuazInstaller-QA-win-x64.zip SHA256 $hash commit $env:GITHUB_SHA" | Set-Content 'dist/CHECKSUM.txt'
+          Write-Host "RAGNAR_TURKUAZ_ZIP_OK files=$($all.Count) zip_sha256=$hash"
+
+      - name: Upload short-lived unsigned Turkuaz QA bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ragnar-TurkuazInstaller-Windows-x64-TEST-ONLY
+          path: |
+            dist/Ragnar-TurkuazInstaller-QA-win-x64.zip
+            dist/CHECKSUM.txt
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
