@@ -32,49 +32,72 @@ Production signature and independent publisher identity are **NOT**
 provided by the QA signer. The QA signer private key is never saved or
 uploaded. Do not use it as a real publisher trust root.
 
-## Artifact layout
+## Artifact layout: one installer for the user
 
-- Start-RagnarTurkuazQA.cmd / Uninstall-RagnarTurkuazQA.cmd
-- TurkuazInstaller.Bootstrapper.exe
-- app/TurkuazInstaller.WinUI.exe (+ dependencies)
-- cli/TurkuazInstaller.Cli.exe (+ dependencies)
-- qa/Ragnar.QaProvisioner.exe
-- qa/ui-profile.yml
-- payload/RagnarClassicPreview-Setup.exe
-- SHA256SUMS.txt
+The previous 177 MB developer ZIP carried .NET/WinUI, TurkuazInstaller CLI,
+provisioner, and a nested Velopack Setup.exe. That ZIP is a **QA development
+bundle**, not an appropriate user installer.
 
-No Inno .iss or original 2015 THOR binary is used in this build.
+The replacement Actions artifact contains only:
 
-## Safety and usage
+- RagnarClassic-Turkuaz-Setup.exe (standalone x64 native Windows wizard)
+- CHECKSUM.txt (SHA-256 metadata)
 
-**Only run this unsigned QA build in a disposable Windows x64 VM or a
-clean, dedicated Windows QA user. Do not bypass SmartScreen or antivirus.**
+Actions automatically delivers these files inside an outer ZIP. There is no
+nested distribution ZIP, no app/ or cli/ folder and no developer executable
+to select. The standalone EXE embeds the same Velopack Setup.exe that the
+TurkuazInstaller Community CLI verified during the hosted QA pipeline.
+The exact embedded payload's SHA-256 is checked again by the wizard before
+any install.
 
-1. Extract the entire short-lived GitHub Actions artifact ZIP to a
-   normal writable folder. Do not execute an EXE within a ZIP.
-2. Verify its checksum against workflow metadata / SHA256SUMS.
-3. Double-click Start-RagnarTurkuazQA.cmd.
-4. Provisioner refuses to overwrite an existing global TurkuazInstaller
-   UI profile or manifest trust policy. Never delete an existing user's
-   configuration to force this QA through.
-5. With a fresh QA profile it creates an exact local-file manifest,
-   .p7s detached CMS signature, and external certificate pin. Then
-   TurkuazInstaller CLI invokes the real Velopack install path,
-   checks metadata and payload SHA-256, and opens the branded GUI.
-6. Preview app installs into %LOCALAPPDATA%/Programs/RagnarClassicTurkuazQA
-   (never into the game directory).
-7. Uninstall-RagnarTurkuazQA.cmd uses TurkuazInstaller uninstall and then
-   removes only the two QA-owned profile/trust files.
+The lightweight setup **does not embed the full TurkuazInstaller Community
+Core, CLI or WinUI**. Its wizard is a separate native Windows front-end, with
+Velopack Setup.exe as its per-user package engine. The TurkuazInstaller
+Community signed-manifest/CLI integration is exercised in CI, but the
+small single-EXE end-user path itself is **not yet TurkuazInstaller Core**.
+A fully self-contained one-EXE product using TurkuazInstaller Core itself
+would require a dedicated native product bootstrap/embedding feature in
+the upstream installer framework and a significantly larger payload.
 
-The local generated manifest lives next to the QA provisioner, not in Git.
-Re-running Start does not silently overwrite/re-sign it. If the first
-install fails after preparation, inspect diagnostics and use the documented
-TurkuazInstaller CLI with the existing signed manifest in the isolated QA
-account; do not repeatedly re-provision.
+## User-facing install wizard
+
+1. Welcome/preview-only warning in Turkish.
+2. Default install path in per-user LocalAppData, with optional folder picker.
+   Custom paths are isolated under a RagnarClassicTurkuazQA subfolder;
+   Windows system directory and invalid paths are rejected.
+3. Choose shortcuts: Desktop+Start, Start only, Desktop only, or None.
+   Velopack creates its standard desktop/Start shortcuts; the wizard
+   removes declined shortcut destinations only after verifying that
+   the .lnk points into the new preview installation. The setup must not
+   touch other applications' shortcuts.
+4. Confirm, then launch the original Velopack Setup.exe. The packager
+   now includes an original Ragnar splash image and icon.
+5. Report success/failure and clean temporary embedded Setup resources.
+
+The native EXE is unsigned QA software. It must only be opened in a
+disposable Windows test VM; do not disable antivirus or SmartScreen.
+There is no GRF/data.ini/real game installation or production release.
+A fresh real-Windows GUI screenshot smoke, custom folder install,
+all 4 shortcut modes, uninstall cleanup, and upgrade behavior are **not
+automatically proven** by a source/build check.
+
+Icon replacement is supported by adding an authorized ICO file to:
+tools/windows/ragnar-turkuaz-qa/branding/icon.ico
+before a future rebuild. Without an override the existing Beam icon is
+used. The splash uses build-time original text/artwork.
+
+## Internal TurkuazInstaller QA (not distributed)
+
+The Windows pipeline still builds the pinned TurkuazInstaller Community
+Bootstrapper, WinUI and CLI in a temporary CI directory. It exercises
+the real signed local manifest + detached CMS + external trust configuration,
+artifact SHA-256 and Velopack install/uninstall. Its private QA signer
+is ephemeral and discarded, and private signing secrets are not published.
+The binary of that internal test environment is excluded from the user artifact.
 
 ## Gates and limitations
 
-Before artifact upload the Windows workflow checks:
+Before artifact upload, the Windows workflow checks:
 - Classic/Legacy theme source tests (not a GUI pixel test).
 - Native Rust preview-only Windows x64 build.
 - Real Velopack package generation.
@@ -83,10 +106,10 @@ Before artifact upload the Windows workflow checks:
   TurkuazInstaller CLI install and uninstall.
 - Package inventory and SHA256.
 
-UI pixel/launcher screenshot QA on the user's machine and production
+Native wizard UI screenshot QA on the user's machine and production
 publisher Authenticode are NOT RUN by the integration tests.
-Brandable fields cover text, not image backgrounds; a separate TurkuazInstaller
-theming feature would require a reviewed upstream framework change.
+Product-specific splash is embedded into Velopack; true custom TurkuazInstaller
+WinUI theming still requires an upstream framework feature.
 
 **No release, no player update feed, no GRF, no DATA.INI, no game
 executable changes.** Existing Inno test workflow remains untouched.
