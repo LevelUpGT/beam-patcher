@@ -23,6 +23,27 @@ async fn main() -> Result<()> {
         .with_max_level(tracing::Level::INFO)
         .init();
     
+    // Preview builds never read/write config.yml or invoke the headless patcher.
+    // The packaged visual UI is distinct from the normal Beam release.
+    #[cfg(feature = "preview-only")]
+    {
+        let mut config = Config::default();
+        config.app.name = "Ragnar Classic Beam Preview".to_string();
+        config.app.window_title = "Ragnar Classic — UI Preview Only".to_string();
+        config.app.server_name = Some("Ragnar Ragnarok Online".to_string());
+        config.app.video_background_enabled = Some(false);
+        config.app.bgm_autoplay = Some(false);
+        config.ui.theme = "ragnar-classic".to_string();
+        config.ui.news_feed_url = None;
+        config.ui.server_status_url = None;
+        config.ui.status_image_url = None;
+        config.app.game_directory = None;
+        beam_ui::run_ui(config)?;
+        return Ok(());
+    }
+
+    #[cfg(not(feature = "preview-only"))]
+    { 
     let args = Args::parse();
     
     let config_path = if std::path::Path::new(&args.config).is_absolute() {
@@ -51,8 +72,10 @@ async fn main() -> Result<()> {
     }
     
     Ok(())
+    }
 }
 
+#[cfg(not(feature = "preview-only"))]
 async fn run_headless(config: Config, manual_patch: Option<String>) -> Result<()> {
     let patcher = beam_core::Patcher::new(config)?;
     
