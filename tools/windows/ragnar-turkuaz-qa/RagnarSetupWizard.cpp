@@ -153,6 +153,8 @@ bool SafeTarget(std::wstring& folder) {
     const DWORD n = GetFullPathNameW(folder.c_str(), MAX_PATH, full, nullptr);
     if (n == 0 || n >= MAX_PATH) return false;
     folder = full;
+    if (folder.find_first_of(L"\"<>|?*") != std::wstring::npos)
+        return false;
     if (folder.size() < 5 || folder[1] != L':' || folder[2] != L'\\') return false;
     const std::wstring lower = [&] {
         std::wstring copy = folder;
@@ -255,9 +257,9 @@ void RemoveDeclinedShortcut(const std::wstring& directory, const std::wstring& r
 
 int InstallInteractive() {
     if (!VerifyEmbeddedSetup()) {
-        Alert(Message(L"Kurulum yukunun SHA-256 dogrulamasi basarisiz.")); return 4;
+        Alert(Message(L"Kurulum içeriğinin SHA-256 doğrulaması başarısız.")); return 4;
     }
-    const std::vector<TASKDIALOG_BUTTON> welcome{{100, L"Devam et"}, {IDCANCEL, L"Iptal"}};
+    const std::vector<TASKDIALOG_BUTTON> welcome{{100, L"Devam et"}, {IDCANCEL, L"İptal"}};
     if (ChoosePage(L"RAGNAR RAGNAROK ONLINE",
           std::wstring(L"") + kVersion +
           L"\nTurkuaz QA | Klasik istemci arayuzu\n\n"
@@ -267,7 +269,7 @@ int InstallInteractive() {
     std::wstring folder = DefaultFolder();
     if (!SafeTarget(folder)) { Alert(L"Guvenli varsayilan klasor alinamadi."); return 4; }
     for (;;) {
-        const std::vector<TASKDIALOG_BUTTON> location{{100, L"Bu klasore kur"}, {101, L"Baska klasor sec"}, {IDCANCEL, L"Iptal"}};
+        const std::vector<TASKDIALOG_BUTTON> location{{100, L"Bu klasöre kur"}, {101, L"Başka klasör seç"}, {IDCANCEL, L"Iptal"}};
         const int answer = ChoosePage(L"Kurulum konumu", folder + L"\n\nKurulum sadece bu onizlemeyi etkiler.", location);
         if (answer == 100) break;
         if (answer != 101) return 0;
@@ -278,17 +280,17 @@ int InstallInteractive() {
         folder = proposed;
     }
 
-    const TASKDIALOG_RADIO_BUTTON radios[] = {
-        {10, L"Masaustu ve Baslat menusu"},
-        {11, L"Yalnizca Baslat menusu"},
-        {12, L"Yalnizca Masaustu"},
-        {13, L"Kisayol olusturma"}
+    const TASKDIALOG_BUTTON radios[] = {
+        {10, L"Masaüstü ve Başlat menüsü"},
+        {11, L"Yalnızca Başlat menüsü"},
+        {12, L"Yalnızca Masaüstü"},
+        {13, L"Kısayol oluşturma"}
     };
     TASKDIALOGCONFIG choices{};
     choices.cbSize = sizeof(choices);
     choices.pszWindowTitle = L"Ragnar | Kisayol tercihleri";
-    choices.pszMainInstruction = L"Kisayollari nereye ekleyelim?";
-    choices.pszContent = L"Seciminiz kurulum tamamlandiginda uygulanir.";
+    choices.pszMainInstruction = L"Kısayolları nereye ekleyelim?";
+    choices.pszContent = L"Seçiminiz kurulum tamamlandığında uygulanır.";
     choices.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT;
     choices.cRadioButtons = ARRAYSIZE(radios);
     choices.pRadioButtons = radios;
@@ -298,9 +300,9 @@ int InstallInteractive() {
     if (FAILED(TaskDialogIndirect(&choices, &answer, &option, nullptr)) || answer != IDOK) return 0;
 
     const std::vector<TASKDIALOG_BUTTON> install{{100, L"Kur"}, {IDCANCEL, L"Iptal"}};
-    if (ChoosePage(L"Kuruluma hazir", folder +
+    if (ChoosePage(L"Kuruluma hazır", folder +
              L"\n\nSurum: v0.1.0 Preview\nYonetici yetkisi gerekmez.\n"
-             L"Velopack yukleme ekrani kurulum sirasinda goruntulenir.", install) != 100) return 0;
+             L"Yükleme ekranı kurulum sırasında görüntülenir.", install) != 100) return 0;
 
     const auto tempRoot = MakeTempDirectory();
     if (tempRoot.empty()) { Alert(L"Gecici klasor olusturulamadi."); return 4; }
@@ -311,12 +313,12 @@ int InstallInteractive() {
     DeleteFileW(setupFile.c_str());
     RemoveDirectoryW(tempRoot.c_str());
     if (!ran || exitCode != 0) {
-        Alert(L"Kurulum tamamlanamadi. Hata kodu: " + std::to_wstring(exitCode));
+        Alert(L"Kurulum tamamlanamadı. Hata kodu: " + std::to_wstring(exitCode));
         return 4;
     }
     if (option == 11 || option == 13) RemoveDeclinedShortcut(KnownFolder(FOLDERID_Desktop), folder);
     if (option == 12 || option == 13) RemoveDeclinedShortcut(KnownFolder(FOLDERID_Programs), folder);
-    Alert(L"Ragnar Classic onizleme kuruldu.\n\nGercek oyun dosyalari degistirilmedi.", MB_ICONINFORMATION);
+    Alert(L"Ragnar Classic önizleme kuruldu.\n\nGerçek oyun dosyaları değiştirilmedi.", MB_ICONINFORMATION);
     return 0;
 }
 } // namespace
@@ -325,11 +327,11 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR commandLine, int) {
     if (commandLine && wcscmp(commandLine, L"--verify-payload") == 0)
         return VerifyEmbeddedSetup() ? 0 : 4;
     if (commandLine && *commandLine) {
-        Alert(L"Desteklenmeyen komut satiri secenegi.");
+        Alert(L"Desteklenmeyen komut satırı seçeneği.");
         return 2;
     }
     const HRESULT init = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-    if (FAILED(init)) { Alert(L"Windows dialog sistemi hazirlanamadi."); return 4; }
+    if (FAILED(init)) { Alert(L"Windows iletişim sistemi hazırlanamadı."); return 4; }
     const int code = InstallInteractive();
     CoUninitialize();
     return code;
