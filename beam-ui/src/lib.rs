@@ -36,6 +36,23 @@ pub fn run_ui(config: Config) -> Result<()> {
         })),
     };
     
+    // Separate safe native preview: only expose config and the compiled
+    // preview marker. ALL patch / launch / settings commands are unregistered.
+    #[cfg(feature = "preview-only")]
+    {
+        tauri::Builder::default()
+            .manage(app_state)
+            .invoke_handler(tauri::generate_handler![
+                commands::get_config,
+                commands::get_preview_mode,
+            ])
+            .run(tauri::generate_context!("tauri.conf.json"))
+            .expect("error while running read-only Tauri preview");
+        return Ok(());
+    }
+
+    #[cfg(not(feature = "preview-only"))]
+    {
     tauri::Builder::default()
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
@@ -67,4 +84,5 @@ pub fn run_ui(config: Config) -> Result<()> {
         .expect("error while running tauri application");
     
     Ok(())
+    }
 }
