@@ -364,7 +364,9 @@ std::wstring RagnarLauncherPath(const std::wstring& root) {
 bool RagnarSilentInstall(const std::wstring& setup, const std::wstring& target,
                          DWORD& exitCode, std::wstring& error) {
     // Velopack official CLI: --silent prevents second splash and post-install launch.
-    std::wstring args = L"\"" + setup + L"\" --silent --installto \"" + target + L"\"";
+    const auto logPath = setup.substr(0, setup.find_last_of(L'\\')) + L"\\velopack-install.log";
+    std::wstring args = L"\"" + setup + L"\" --silent --installto \"" +
+                        target + L"\" --log \"" + logPath + L"\"";
     std::vector<wchar_t> buffer(args.begin(), args.end());
     buffer.push_back(0);
     STARTUPINFOW startup{sizeof(startup)};
@@ -372,7 +374,7 @@ bool RagnarSilentInstall(const std::wstring& setup, const std::wstring& target,
     if (!CreateProcessW(setup.c_str(), buffer.data(), nullptr, nullptr, FALSE, 0,
                         nullptr, nullptr, &startup, &process)) {
         error = L"Kurulum motoru başlatılamadı. Windows hatası: " +
-                std::to_wstring(GetLastError());
+                std::to_wstring(GetLastError()) + L"\\nGünlük: " + logPath;
         return false;
     }
     DWORD waited = WaitForSingleObject(process.hProcess, INFINITE);
@@ -381,7 +383,8 @@ bool RagnarSilentInstall(const std::wstring& setup, const std::wstring& target,
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
     if (!okay || exitCode != 0) {
-        error = L"Velopack kurulum hatası: " + std::to_wstring(exitCode);
+        error = L"Velopack kurulum hatası: " + std::to_wstring(exitCode) +
+                L"\\nGünlük: " + logPath;
         return false;
     }
     auto updater = target + L"\\Update.exe";
@@ -391,6 +394,7 @@ bool RagnarSilentInstall(const std::wstring& setup, const std::wstring& target,
         error = L"Kurulumdan sonra gerekli Ragnar dosyaları bulunamadı.";
         return false;
     }
+    DeleteFileW(logPath.c_str());
     return true;
 }
 bool RagnarCreateShortcut(bool desktop, const std::wstring& root) {
