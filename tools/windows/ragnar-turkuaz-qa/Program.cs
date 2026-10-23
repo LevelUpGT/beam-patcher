@@ -140,21 +140,21 @@ internal static class Program
             }
 
             Directory.CreateDirectory(configRoot);
-            // CreateNew mode makes every write fail closed on an existing user file.
+            // Track only paths created by this invocation; never delete someone else's file.
+            var created = new List<string>();
             try
             {
-                WriteNew(manifestPath, manifestBytes);
-                WriteNew(signaturePath, signatureBytes);
-                WriteNew(trustPath, new UTF8Encoding(false).GetBytes(trust));
-                WriteNew(profilePath, brandBytes);
+                WriteNew(manifestPath, manifestBytes); created.Add(manifestPath);
+                WriteNew(signaturePath, signatureBytes); created.Add(signaturePath);
+                WriteNew(trustPath, new UTF8Encoding(false).GetBytes(trust)); created.Add(trustPath);
+                WriteNew(profilePath, brandBytes); created.Add(profilePath);
             }
             catch
             {
-                DeleteOnlyOurConfig(trustPath);
-                DeleteOnlyOurConfig(profilePath);
-                // Local unsigned manifest and detached QA signature are not user settings.
-                if (File.Exists(signaturePath)) File.Delete(signaturePath);
-                if (File.Exists(manifestPath)) File.Delete(manifestPath);
+                foreach (var createdPath in created.AsEnumerable().Reverse())
+                {
+                    if (File.Exists(createdPath)) File.Delete(createdPath);
+                }
                 throw;
             }
             Console.WriteLine("RAGNAR_TURKUAZ_QA_SIGNED_LOCAL_MANIFEST_OK");
