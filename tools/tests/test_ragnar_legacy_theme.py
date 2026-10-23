@@ -28,7 +28,7 @@ class RagnarThemeContractTests(unittest.TestCase):
         self.assertIn("new URLSearchParams(window.location.search).get('theme') === 'ragnar-legacy'", HTML)
         self.assertIn("applyConfiguredTheme(config);", HTML)
         self.assertIn("classList.toggle('theme-ragnar-legacy', legacy)", HTML)
-        self.assertIn("classList.toggle('theme-preview-only', isThemePreview)", HTML)
+        self.assertIn("classList.toggle('theme-preview-only', isThemePreview || previewOnlyRuntime)", HTML)
 
     def test_preview_has_no_patch_controls_and_no_news_api(self):
         self.assertIn("'#play-button, .btn-action-small, #register-btn-main'", HTML)
