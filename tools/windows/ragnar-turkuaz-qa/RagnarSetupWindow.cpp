@@ -1,7 +1,7 @@
 // Dosya Yolu: tools/windows/ragnar-turkuaz-qa/RagnarSetupWindow.cpp
 // Amac: Adobe tarzi tek ekran Ragnar kurulum akisini tasiyan native View
 // Modul - Win32 Windows UI C++
-// Version: 0.5.0-qa
+// Version: 0.5.1-qa
 // Aciklama: Splash is first; options and progress stay in one window; no extra dialogs
 // Bagimli Oldugu Katman: RagnarSetupWizard.cpp adapter | Windows UI / GDI
 
@@ -182,6 +182,13 @@ void PaintConceptBackground(HDC dc) {
                        srcX, srcY, srcW, srcH, Gdiplus::UnitPixel);
     Gdiplus::SolidBrush shade(Gdiplus::Color(155, 7, 20, 41));
     graphics.FillRectangle(&shade, Gdiplus::Rect(0, 0, width, height));
+    if (state.page == Page::Welcome) {
+        // Concept C carries baked-in art lettering on its upper-left area.
+        // Keep the approved scene but prevent two overlapping product titles.
+        Gdiplus::SolidBrush textPanel(Gdiplus::Color(210, 7, 20, 41));
+        graphics.FillRectangle(&textPanel,
+                               Gdiplus::Rect(0, 0, std::min(width, 695), std::min(height, 410)));
+    }
 }
 void Paint(HDC dc) {
     TRIVERTEX stops[2]{};
