@@ -1,7 +1,7 @@
 // Dosya Yolu: tools/windows/ragnar-turkuaz-qa/RagnarSetupWindow.cpp
 // Amac: Adobe tarzi tek ekran Ragnar kurulum akisini tasiyan native View
 // Modul - Win32 Windows UI C++
-// Version: 0.3.2-qa
+// Version: 0.3.3-qa
 // Aciklama: Splash is first; options and progress stay in one window; no extra dialogs
 // Bagimli Oldugu Katman: RagnarSetupWizard.cpp adapter | Windows UI / GDI
 
@@ -102,7 +102,7 @@ void Paint(HDC dc) {
           L"TURKUAZ   •   KURULUM   •   v0.1.0 QA", 44, 150, 680, 26);
     RECT content{};
     GetClientRect(state.hwnd, &content);
-    const int footerY = std::max(460, content.bottom - 34);
+    const int footerY = std::max(0, static_cast<int>(content.bottom) - 34);
     Solid(dc, RECT{40, footerY - 13, content.right - 40, footerY - 12}, RGB(39, 142, 157));
     Print(dc, state.smallFont, RGB(183,217,222),
           L"LevelUpGT  •  Yalnızca test  •  Oyun dosyaları değiştirilmez",
@@ -358,8 +358,8 @@ bool SetupWindow(HINSTANCE instance, bool visible) {
         work = RECT{0,0,GetSystemMetrics(SM_CXSCREEN),GetSystemMetrics(SM_CYSCREEN)};
     }
     // Keep the full window inside the available work area, including taskbar.
-    const int width = std::min(W,work.right-work.left);
-    const int height = std::min(H,work.bottom-work.top);
+    const int width = std::min(W, static_cast<int>(work.right - work.left));
+    const int height = std::min(H, static_cast<int>(work.bottom - work.top));
     const int x=work.left+(work.right-work.left-width)/2;
     const int y=work.top+(work.bottom-work.top-height)/2;
     HWND window=CreateWindowExW(WS_EX_APPWINDOW,cls.lpszClassName,kTitle,
