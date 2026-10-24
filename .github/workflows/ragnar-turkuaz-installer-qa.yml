@@ -88,6 +88,22 @@ jobs:
           }
           Write-Host 'RAGNAR_TURKUAZ_PREVIEW_BOUNDARY_OK'
 
+      - name: Initialize MSVC x64 toolchain early
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Fast native Windows UI compile preflight
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force 'build/wizard' | Out-Null
+          '#define RAGNAR_EMBEDDED_SETUP_SHA256 L"0000000000000000000000000000000000000000000000000000000000000000"' |
+            Set-Content -LiteralPath 'build/wizard/setup_hash.h' -Encoding ascii
+          cl /nologo /Zs /std:c++17 /utf-8 /EHsc /DUNICODE /D_UNICODE /I build/wizard beam/tools/windows/ragnar-turkuaz-qa/RagnarSetupWizard.cpp beam/tools/windows/ragnar-turkuaz-qa/RagnarSetupWindow.cpp
+          if ($LASTEXITCODE -ne 0) { throw 'NATIVE_SETUP_PREFLIGHT_FAILED' }
+          Write-Host 'NATIVE_SETUP_CXX_PREFLIGHT_OK'
+
       - name: Build Beam read-only native Windows preview
         shell: pwsh
         working-directory: beam
@@ -233,11 +249,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'QA_CONFIG_CLEANUP_FAILED' }
           Remove-Item -LiteralPath $manifest,$sig -Force
           Write-Host 'RAGNAR_TURKUAZ_REAL_SIGNED_LOCAL_VELOPACK_QA_OK'
-
-      - name: Initialize MSVC x64 toolchain for native single EXE
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
 
       - name: Build compact one-file Ragnar setup wizard
         shell: pwsh
