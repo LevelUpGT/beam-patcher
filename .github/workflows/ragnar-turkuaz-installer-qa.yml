@@ -39,16 +39,15 @@ jobs:
           persist-credentials: false
           path: beam
 
-      - name: Verify exact public source and caller
+      - name: Verify public source commit
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          if ('${{ github.repository }}' -notin @('LevelUpGT/beam-patcher','b1glord/ragnarokclientpatch')) {
-            throw 'PUBLIC_DISTRIBUTION_CALLER_NOT_ALLOWED'
-          }
           $actual = (git -C beam rev-parse HEAD).Trim()
-          if ($actual -notmatch '^[0-9a-f]{40}
-
+          $expected = '${{ inputs.source_ref }}'
+          if ($actual.Length -ne 40) { throw 'SOURCE_SHA_INVALID' }
+          if ($expected -and $actual -ne $expected) { throw 'SOURCE_SHA_MISMATCH' }
+          Write-Host "PUBLIC_BEAM_SOURCE_PIN_OK sha=$actual"
       - name: Checkout pinned Community installer source
         uses: actions/checkout@v4
         with:
