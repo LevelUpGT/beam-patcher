@@ -1,7 +1,7 @@
 // Dosya Yolu: tools/windows/ragnar-turkuaz-qa/RagnarSetupWizard.cpp
 // Amac: Branded wizard icin dogrulanmis Velopack islem ve dosya erisim adapterleri
 // Modul - Windows native C++ Setup UI
-// Version: 0.3.2-qa
+// Version: 0.4.0-qa
 // Aciklama: Embedded verified Velopack Setup, klasor secimi, kısayol tercihleri ve marka splash
 // Bagimli Oldugu Katman: Velopack Setup | TurkuazInstaller preview QA build
 // Note: Legacy dialog helpers are not invoked by the standalone QA wizard.
@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "setup_hash.h"
+#include "setup_identity.h"
 
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "ole32.lib")
@@ -29,11 +30,11 @@
 
 namespace {
 constexpr int kSetupResourceId = 101;
-constexpr wchar_t kProductTitle[] = L"Ragnar Classic Visual Preview";
-constexpr wchar_t kShortcutFile[] = L"Ragnar Classic Visual Preview.lnk";
+constexpr wchar_t kProductTitle[] = TRO_PRODUCT_NAME;
+constexpr wchar_t kShortcutFile[] = L"Turkuaz Ragnarok Online (QA).lnk";
 constexpr wchar_t kPackageExe[] = L"RagnarClassicPreview-Setup.exe";
-constexpr wchar_t kVersion[] = L"v0.1.0 - QA";
-constexpr wchar_t kInstalledLauncher[] = L"RagnarClassicPreview.exe";
+constexpr wchar_t kVersion[] = L"v" TRO_INSTALLER_VERSION L" - QA";
+constexpr wchar_t kInstalledLauncher[] = TRO_MAIN_EXE;
 
 struct Bytes { const BYTE* data; DWORD length; };
 
@@ -41,7 +42,7 @@ std::wstring Message(const wchar_t* reason) {
     return std::wstring(reason) + L"\n\nBu paket sadece gorunum testidir; oyunun dosyalari degistirilmez.";
 }
 void Alert(const std::wstring& text, UINT icon = MB_ICONERROR) {
-    MessageBoxW(nullptr, text.c_str(), L"Ragnar Kurulum | Turkuaz QA", MB_OK | icon);
+    MessageBoxW(nullptr, text.c_str(), TRO_WINDOW_TITLE, MB_OK | icon);
 }
 
 // TaskDialogIndirect is ordinal 345 in ComCtl32 v6. Statically importing it
@@ -124,7 +125,7 @@ int ChoosePage(const wchar_t* heading, const std::wstring& details,
     config.cbSize = sizeof(config);
     config.hwndParent = nullptr;
     config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT;
-    config.pszWindowTitle = L"Ragnar Ragnarok Online | Turkuaz Installer";
+    config.pszWindowTitle = TRO_WINDOW_TITLE;
     config.pszMainInstruction = heading;
     config.pszContent = details.c_str();
     config.pszMainIcon = TD_INFORMATION_ICON;
@@ -286,7 +287,7 @@ int InstallInteractive() {
         Alert(Message(L"Kurulum içeriğinin SHA-256 doğrulaması başarısız.")); return 4;
     }
     const std::vector<TASKDIALOG_BUTTON> welcome{{100, L"Devam et"}, {IDCANCEL, L"İptal"}};
-    if (ChoosePage(L"RAGNAR RAGNAROK ONLINE",
+    if (ChoosePage(TRO_PRODUCT_NAME,
           std::wstring(L"") + kVersion +
           L"\nTurkuaz QA | Klasik istemci arayuzu\n\n"
           L"Bu paket sunucuya baglanmaz, patch uygulamaz ve mevcut oyun klasorune yazmaz.\n"
@@ -314,7 +315,7 @@ int InstallInteractive() {
     };
     TASKDIALOGCONFIG choices{};
     choices.cbSize = sizeof(choices);
-    choices.pszWindowTitle = L"Ragnar | Kisayol tercihleri";
+    choices.pszWindowTitle = TRO_WINDOW_TITLE;
     choices.pszMainInstruction = L"Kısayolları nereye ekleyelim?";
     choices.pszContent = L"Seçiminiz kurulum tamamlandığında uygulanır.";
     choices.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT;
@@ -415,7 +416,7 @@ bool RagnarCreateShortcut(bool desktop, const std::wstring& root) {
     if (SUCCEEDED(link->SetPath(updater.c_str())) &&
         SUCCEEDED(link->SetArguments(L"start RagnarClassicPreview.exe")) &&
         SUCCEEDED(link->SetWorkingDirectory(root.c_str())) &&
-        SUCCEEDED(link->SetDescription(L"Ragnar Classic Visual Preview (QA)"))) {
+        SUCCEEDED(link->SetDescription(L"Turkuaz Ragnarok Online (QA Preview)"))) {
         IPersistFile* persist = nullptr;
         if (SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(&persist)))) {
             saved = SUCCEEDED(persist->Save(path.c_str(), TRUE));
