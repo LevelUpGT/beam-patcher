@@ -241,3 +241,38 @@ No antivirus exclusions, script policy modifications, app installer releases,
 game patches or private feed changes are authorized. Genuine Windows
 10/11 visual/installation, shortcuts and uninstallation tests are still
 required once the binary passes the loader smoke.
+
+
+## 2026-10-24 — Screenshot incident: gradients instead of approved artwork
+
+Two visually different processes were shown:
+
+1. `Turkuaz Ragnarok Online - Kurulum` is the native Win32 setup. The
+   GitHub Actions ZIP's actual `artwork-identity.json` identifies its EXE as
+   `gradient-only` with `embedded_count=0`. Source implementation for IDs
+   102–104 does **not** embed image files unless all approved PNG binaries
+   are available at the pinned source paths. The earlier successful CI was
+   not a themed-EXE acceptance.
+2. `Ragnar Ragnarok Online` is the separate read-only Tauri/Beam launcher
+   started after installation. Native setup resources are not a launcher
+   background theme. The legacy news tiles in the screenshot also lack
+   their own image data; fixing setup assets does not fix launcher HTML/CSS.
+
+The external Windows QA kit provided to the user retains the exact CI
+EXE bytes under a `.bin` extension to avoid accidentally launching the
+known gradient-only base. Its `00-TESTI-BASLAT.cmd` verifies source and
+approved image hashes, uses Windows `UpdateResourceW` on a temporary
+EXE and invokes final native `--verify-artwork-present` plus payload,
+UI and common-dialog runtime smoke *before* presenting the final EXE.
+This is a local test kit, not a GitHub Actions release or validated
+Windows 10 screenshot test.
+
+Manual workflow dispatch now supports `require_artwork=true`; this
+**fails closed** when `artwork-identity.json` says `gradient-only`.
+A green build without `require_artwork` still establishes only fallback
+packaging. Committing the three approved binary assets (with SHA-256 and
+license/provenance review) or performing the Windows-local image
+embedding is required before anyone may claim real themed setup QA.
+
+Do not disable Firefox, SmartScreen or endpoint security, and do not
+merge or publish a production installer based on local QA screenshots.
