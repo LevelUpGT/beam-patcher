@@ -2,7 +2,7 @@
 Dosya Yolu: docs/LEVELUP-GAMES-BEAM-QA.md
 Amac: Sac Modelleri ve LevelUp Games videosu icin Beam test akisinin sinirlarini tanimlar
 Modul - Documentation Markdown
-Version: 0.1.0
+Version: 0.2.0
 Aciklama: Kaynak kodundan yerel medya uretme ve offline Beam paketlerini test etme
 Bagimli Oldugu Katman: Beam UI | RagnarokClient PR #17
 -->
@@ -37,25 +37,40 @@ tam config degildir. Beam medya yuklemesi ve istemci davranisi gercek
 Windows sisteminde ayrica smoke edilmelidir. UI background videosu,
 Windows EXE splash animasyonuyla ayni sey degildir.
 
-## 2. Sac Modelleri BEAM QA paketini olustur
+## 2. Repo'dan Sac Modelleri ve Beam tam QA derlemesi
 
-Asset kaynagi RagnarokClient PR #17 dalidir. Daha once sahipte mevcut olan
-orijinal kaynak ZIP ile asagidaki islemleri RagnarokClient repo kokunde yap:
+Normal kaynak:
+`LevelUpGT/RagnarokClient` PR #17 (QA source branch).
 
-    python ./tools/STAGE-HAIR-PACK.py /path/to/titanclient-Modifications-master.zip --stage
-    python ./tools/BUILD-BEAM-HAIR-PACK.py
+Windows / RagnarokClient repo root:
 
-Sonuc: patches/output/hair-pack-84.beam (BEAM v1, 336 ACT/SPR, UTF-8
-isimler). Program input QA manifest, dosya SHA256, tam kapsam,
-duplicate, BEAM v1 MD5 ve readback dogrulamasini yapar. Mevcut
-patchlist'e asla eklemez ve GRF/EXE dosyalarini degistirmez.
+    .\tools\QA-BEAM-SAC-MODELLERI.ps1
+
+**Harici ZIP, -ArchivePath veya manuel MP4 girdisi yoktur.**
+Tek komut, Git'te takip edilen `assets/hair-pack/84` 336 ACT/SPR kaynaklarini
+dogrular, client release planini kontrol eder, LevelUp Games videosunu
+kaynak kodundan yeniden uretir, Beam Rust kaynagini sabit commit'ten
+derler, sonra BEAM v1 336 dosyali QA arsivini olusturur.
+
+On kosullar: Python 3, Git, FFmpeg, Rust/Cargo.
+Beam source checkout / Cargo dependency fetch internet gerektirir, ama
+hangi kaynak ZIP'inin bulunacagi operator makinesinden sorulmaz.
+
+**Su anki engel:** Gercek 336 ACT/SPR binary + `qa-manifest.json`
+henüz PR #17 Git dalina commit edilmedi. Bu nedenle repo tam derlemesi
+`REPOSITORY_HAIR_ASSETS_MISSING` ile bilerek durur; sentetik dosyalar
+ile gercek oyun testi iddia edilemez.
+
+Beam v1 QA cikti yeri:
+`RagnarokClient/build/beam-qa/2022/hair-pack-84.beam`.
+Video yeri:
+`RagnarokClient/build/beam-qa/2022/levelup-games-intro.mp4`.
 
 **KRITIK UYUMLULUK:** Ragnarok 20220406 client Korece GRF dosya adlari
-icin CP949 bekleyebilir. Mevcut Beam GRF yazici filename.as_bytes()
-ile UTF-8 dosya adi yazar. CP949 oyun gorunurlugu **dogrulanmadi**.
+icin CP949 bekleyebilir. Mevcut Beam GRF writer `filename.as_bytes()`
+ile UTF-8 yazar. CP949 oyun gorunurlugu **dogrulanmadi**.
 Ayrica mevcut hairstyle.grf ile isim cakismalari bulunuyor.
-hair-pack-84.beam dosyasini aktif ragnardata.grf/tdata1.grf
-uzerine uygulama; yalnizca izole kopya ve rollback testi uygundur.
+hair-pack-84.beam aktif GRF veya patchlist'e otomatik uygulanmaz.
 
 ## 3. Public 2022 Beam dagitimi kapali kalir
 
