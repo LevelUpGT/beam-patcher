@@ -432,7 +432,7 @@ bool RagnarOpenInstalled(const std::wstring& root, DWORD& error) {
         error = ERROR_FILE_NOT_FOUND;
         return false;
     }
-    std::wstring command = L"\\"" + updater + L"\\" start RagnarClassicPreview.exe";
+    std::wstring command = L"\"" + updater + L"\" start RagnarClassicPreview.exe";
     std::vector<wchar_t> args(command.begin(), command.end());
     args.push_back(0);
     STARTUPINFOW startup{sizeof(startup)};
