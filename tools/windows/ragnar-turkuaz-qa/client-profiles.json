@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "product": {
+    "display_name": "Turkuaz Ragnarok Online",
+    "public_setup_name": "Turkuaz-Ragnarok-Online-Setup.exe",
+    "publisher_brand": "Turkuaz",
+    "installer_semver": "0.1.0"
+  },
+  "profiles": {
+    "preview-qa": {
+      "client_family": "preview",
+      "client_year": null,
+      "packetver": null,
+      "client_build": null,
+      "channel": "qa",
+      "qa_install_enabled": true,
+      "production_publish_allowed": false,
+      "velopack_pack_id": "levelupgt.ragnar-classic-preview",
+      "installed_main_exe": "RagnarClassicPreview.exe",
+      "install_directory": "RagnarClassicTurkuazQA"
+    },
+    "classic-2015": {
+      "client_family": "classic",
+      "client_year": 2015,
+      "packetver": null,
+      "client_build": null,
+      "channel": "reserved",
+      "qa_install_enabled": false,
+      "production_publish_allowed": false,
+      "velopack_pack_id": null,
+      "installed_main_exe": null,
+      "install_directory": null
+    },
+    "renewal-2022": {
+      "client_family": "renewal",
+      "client_year": 2022,
+      "packetver": null,
+      "client_build": null,
+      "channel": "reserved",
+      "qa_install_enabled": false,
+      "production_publish_allowed": false,
+      "velopack_pack_id": null,
+      "installed_main_exe": null,
+      "install_directory": null
+    }
+  }
+}

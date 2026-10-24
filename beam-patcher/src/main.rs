@@ -19,6 +19,17 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Velopack launches the main EXE with --veloapp-* lifecycle hooks.
+    // A preview-only build must exit immediately rather than showing the
+    // Beam window during install/uninstall. Normal Beam remains unchanged.
+    #[cfg(feature = "preview-only")]
+    if std::env::args_os()
+        .skip(1)
+        .any(|arg| arg.to_string_lossy().starts_with("--veloapp-"))
+    {
+        return Ok(());
+    }
+
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .init();

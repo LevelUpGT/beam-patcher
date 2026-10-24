@@ -1,0 +1,359 @@
+# Dosya Yolu: .github/workflows/ragnar-turkuaz-installer-qa.yml
+# Amac: Ragnar Classic read-only preview icin TurkuazInstaller Community kullanarak Windows QA paketi uretmek
+# Modul - GitHub Actions Windows QA YAML
+# Version: 0.4.0-qa
+# Aciklama: Preview-only Rust + Velopack + pinned TurkuazInstaller WinUI/CLI; ephemeral local trust, no release
+# Bagimli Oldugu Katman: Rust preview-only | TurkuazInstaller Community | Velopack
+
+name: Ragnar TurkuazInstaller Windows QA
+
+on:
+  push:
+    branches:
+      - test/ragnar-turkuaz-installer-qa-20261024
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      source_ref:
+        description: Immutable Beam commit to build; no private RagnarokClient checkout
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ragnar-turkuaz-qa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-turkuaz-qa:
+    runs-on: windows-2025
+    timeout-minutes: 55
+    steps:
+      - name: Checkout Beam preview only
+        uses: actions/checkout@v4
+        with:
+          repository: LevelUpGT/beam-patcher
+          ref: ${{ inputs.source_ref || github.sha }}
+          persist-credentials: false
+          path: beam
+
+      - name: Verify public source commit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = (git -C beam rev-parse HEAD).Trim()
+          $expected = '${{ inputs.source_ref }}'
+          if ($actual.Length -ne 40) { throw 'SOURCE_SHA_INVALID' }
+          if ($expected -and $actual -ne $expected) { throw 'SOURCE_SHA_MISMATCH' }
+          Write-Host "PUBLIC_BEAM_SOURCE_PIN_OK sha=$actual"
+      - name: Generate canonical product and private client-profile identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force 'build/wizard' | Out-Null
+          $commit = (git -C beam rev-parse HEAD).Trim()
+          py -3 -B beam/tools/windows/ragnar-turkuaz-qa/generate_setup_identity.py --profile preview-qa --source-commit $commit --header build/wizard/setup_identity.h --report build/wizard/identity.json
+          if ($LASTEXITCODE -ne 0) { throw 'INSTALLER_IDENTITY_GENERATION_FAILED' }
+          $identity = Get-Content build/wizard/identity.json -Raw | ConvertFrom-Json
+          if ($identity.production_publish_allowed -or $identity.client_year -or $identity.profile_id -ne 'preview-qa') {
+            throw 'PREVIEW_IDENTITY_TRUST_BOUNDARY_FAILED'
+          }
+          Write-Host "TRO_QA_IDENTITY_OK profile=$($identity.profile_id) commit=$commit"
+
+      - name: Checkout pinned Community installer source
+        uses: actions/checkout@v4
+        with:
+          repository: TurkuazLabs/TurkuazInstaller
+          ref: 1048931bf7498ab4d4440414c4463e6ee5e7421e
+          persist-credentials: false
+          path: turkuaz-engine
+
+      - name: Install Rust and .NET 10
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Source tests and fail-closed preview boundaries
+        shell: pwsh
+        working-directory: beam
+        run: |
+          py -3 -B -m unittest discover -s tools/tests -p 'test_setup_identity.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'SETUP_IDENTITY_TEST_FAILED' }
+          py -3 -B -m unittest discover -s tools/tests -p 'test_ragnar_classic_theme.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'CLASSIC_TEST_FAILED' }
+          py -3 -B -m unittest discover -s tools/tests -p 'test_ragnar_legacy_theme.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'LEGACY_TEST_FAILED' }
+          $app = Get-Content beam-patcher/src/main.rs -Raw
+          $ui = Get-Content beam-ui/src/lib.rs -Raw
+          if (-not $app.Contains('starts_with("--veloapp-")')) {
+            throw 'PREVIEW_VELOPACK_INSTALL_HOOK_GUARD_MISSING'
+          }
+          if (-not $app.Contains('#[cfg(feature = "preview-only")]') -or
+              -not $ui.Contains('commands::get_preview_mode')) { throw 'PREVIEW_BOUNDARY_MISSING' }
+          $preview = [regex]::Match($ui, '(?s)#\[cfg\(feature = "preview-only"\)\]\s*\{(.+?)#\[cfg\(not\(feature = "preview-only"\)\)\]')
+          if (-not $preview.Success) { throw 'UNSAFE_PREVIEW_BRANCH' }
+          foreach ($forbidden in @('commands::start_patching', 'commands::launch_game',
+              'commands::manual_patch', 'commands::set_game_directory',
+              'commands::perform_update', 'commands::reset_cache')) {
+            if ($preview.Value.Contains($forbidden)) { throw "FORBIDDEN_PREVIEW_API_$forbidden" }
+          }
+          Write-Host 'RAGNAR_TURKUAZ_PREVIEW_BOUNDARY_OK'
+
+      - name: Initialize MSVC x64 toolchain early
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Fast native Windows UI compile preflight
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force 'build/wizard' | Out-Null
+          '#define RAGNAR_EMBEDDED_SETUP_SHA256 L"0000000000000000000000000000000000000000000000000000000000000000"' |
+            Set-Content -LiteralPath 'build/wizard/setup_hash.h' -Encoding ascii
+          cl /nologo /Zs /std:c++17 /utf-8 /EHsc /DUNICODE /D_UNICODE /I build/wizard beam/tools/windows/ragnar-turkuaz-qa/RagnarSetupWizard.cpp beam/tools/windows/ragnar-turkuaz-qa/RagnarSetupWindow.cpp
+          if ($LASTEXITCODE -ne 0) { throw 'NATIVE_SETUP_PREFLIGHT_FAILED' }
+          Write-Host 'NATIVE_SETUP_CXX_PREFLIGHT_OK'
+
+      - name: Build Beam read-only native Windows preview
+        shell: pwsh
+        working-directory: beam
+        run: |
+          cargo build --release -p beam-patcher --features preview-only
+          if ($LASTEXITCODE -ne 0) { throw 'RUST_PREVIEW_BUILD_FAILED' }
+          if (-not (Test-Path 'target/release/beam-patcher.exe')) { throw 'PREVIEW_EXE_MISSING' }
+
+      - name: Prepare true Velopack preview Setup and full package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $toolDir = Join-Path $env:RUNNER_TEMP 'ragnar-vpk'
+          dotnet tool install vpk --tool-path $toolDir --version 1.2.161
+          if ($LASTEXITCODE -ne 0) { throw 'VPK_INSTALL_FAILED' }
+          New-Item -ItemType Directory -Force 'build/preview-payload','build/velopack' | Out-Null
+          Copy-Item 'beam/target/release/beam-patcher.exe' 'build/preview-payload/RagnarClassicPreview.exe'
+          $env:VELOPACK_TEMP = (Join-Path $env:RUNNER_TEMP 'ragnar-vpk-tmp')
+          New-Item -ItemType Directory -Force $env:VELOPACK_TEMP | Out-Null
+          # Use a project-specific icon if supplied; otherwise keep Beam's existing icon.
+          $customIcon = 'beam/tools/windows/ragnar-turkuaz-qa/branding/icon.ico'
+          $icon = if (Test-Path $customIcon) { $customIcon } else { 'beam/beam-ui/icons/icon.ico' }
+          if (-not (Test-Path $icon)) { throw 'BRANDING_ICON_MISSING' }
+          # Original QA splash artwork, generated on the Windows build runner.
+          # No external images, ads, CDN, or network data are embedded.
+          Add-Type -AssemblyName System.Drawing
+          $bitmap = [System.Drawing.Bitmap]::new(600, 310)
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+          $rect = [System.Drawing.Rectangle]::new(0, 0, 600, 310)
+          $background = [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+            $rect,[System.Drawing.Color]::FromArgb(14,22,42),
+            [System.Drawing.Color]::FromArgb(15,105,114),20)
+          $graphics.FillRectangle($background,$rect)
+          $lineBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(48,224,197))
+          $titleBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::White)
+          $mutedBrush = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(193,221,223))
+          $title = [System.Drawing.Font]::new('Segoe UI',36,[System.Drawing.FontStyle]::Bold)
+          $subtitle = [System.Drawing.Font]::new('Segoe UI',15,[System.Drawing.FontStyle]::Regular)
+          $small = [System.Drawing.Font]::new('Segoe UI',11,[System.Drawing.FontStyle]::Regular)
+          try {
+            $graphics.DrawString('RAGNAR',$title,$titleBrush,45,62)
+            $graphics.FillRectangle($lineBrush,48,153,240,4)
+            $graphics.DrawString('Ragnarok Online',$subtitle,$titleBrush,47,183)
+            $graphics.DrawString('Classic Visual Preview  |  Turkuaz QA',$small,$mutedBrush,49,235)
+            $splash = (Join-Path (Resolve-Path 'build').Path 'ragnar-splash.png')
+            $bitmap.Save($splash,[System.Drawing.Imaging.ImageFormat]::Png)
+          } finally {
+            $small.Dispose(); $subtitle.Dispose(); $title.Dispose()
+            $background.Dispose(); $lineBrush.Dispose(); $titleBrush.Dispose(); $mutedBrush.Dispose()
+            $graphics.Dispose(); $bitmap.Dispose()
+          }
+          $identity = Get-Content build/wizard/identity.json -Raw | ConvertFrom-Json
+          & (Join-Path $toolDir 'vpk.exe') --legacyConsole true --yes true --skip-updates true pack --runtime win-x64 --packId $identity.velopack_pack_id --packTitle $identity.display_name --packVersion $identity.installer_version --packDir build/preview-payload --mainExe RagnarClassicPreview.exe --outputDir build/velopack --delta none --skipVeloAppCheck true --icon $icon --splashImage $splash --shortcuts None
+          if ($LASTEXITCODE -ne 0) { throw 'VELOPACk_PACK_FAILED' }
+          if (-not (Select-String -Path 'beam/.github/workflows/ragnar-turkuaz-installer-qa.yml' -Pattern '--shortcuts None' -SimpleMatch -Quiet)) {
+            throw 'VELOPACK_SHORTCUTS_MUST_BE_USER_OPT_IN'
+          }
+          $setup = @(Get-ChildItem -LiteralPath build/velopack -File -Filter '*Setup.exe')
+          $full = @(Get-ChildItem -LiteralPath build/velopack -File -Filter '*-full.nupkg')
+          if ($setup.Count -ne 1 -or $full.Count -ne 1) { throw 'VELOPACk_OUTPUT_INVENTORY_INVALID' }
+          New-Item -ItemType Directory -Force 'build/RagnarTurkuazQA/payload' | Out-Null
+          Copy-Item -LiteralPath $setup[0].FullName -Destination 'build/RagnarTurkuazQA/payload/RagnarClassicPreview-Setup.exe'
+
+      - name: Smoke real Velopack silent installation layout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = @(Get-ChildItem -Path 'build/velopack' -File -Filter '*Setup.exe')
+          if ($setup.Count -ne 1) { throw 'VELOPACK_SETUP_MISSING' }
+          $target = Join-Path $env:RUNNER_TEMP 'RagnarCanonicalInstallLayoutQA'
+          $log = Join-Path $env:RUNNER_TEMP 'RagnarCanonicalInstallLayoutQA.log'
+          if (Test-Path $target) { throw 'UNEXPECTED_EXISTING_QA_TARGET' }
+          # Setup.exe is a Windows GUI process. Invoke with -Wait/-PassThru;
+          # PowerShell's native command $LASTEXITCODE is not reliable for WinExe.
+          $installProcess = Start-Process -FilePath $setup[0].FullName -ArgumentList @(
+            '--silent', '--installto', "`"$target`"", '--log', "`"$log`""
+          ) -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) {
+            throw "SILENT_INSTALL_FAILED code=$($installProcess.ExitCode) log=$log"
+          }
+          $updater = Join-Path $target 'Update.exe'
+          $actualExe = Join-Path $target 'current/RagnarClassicPreview.exe'
+          if (-not (Test-Path -LiteralPath $updater -PathType Leaf) -or
+              -not (Test-Path -LiteralPath $actualExe -PathType Leaf)) {
+            throw "VELOPACK_CANONICAL_LAYOUT_MISSING root=$target log=$log"
+          }
+          $uninstallProcess = Start-Process -FilePath $updater -ArgumentList @(
+            '--silent', 'uninstall'
+          ) -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) {
+            throw "VELOPACK_UNINSTALL_FAILED code=$($uninstallProcess.ExitCode)"
+          }
+          Write-Host 'RAGNAR_REAL_SILENT_INSTALL_CURRENT_LAYOUT_OK'
+
+      - name: Publish pinned TurkuazInstaller Windows distribution
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish turkuaz-engine/src/TurkuazInstaller.Bootstrapper/TurkuazInstaller.Bootstrapper.csproj -c Release -r win-x64 --self-contained true -o build/bootstrap
+          if ($LASTEXITCODE -ne 0) { throw 'TURKUAZ_BOOTSTRAP_BUILD_FAILED' }
+          dotnet publish turkuaz-engine/src/TurkuazInstaller.WinUI/TurkuazInstaller.WinUI.csproj -c Release -r win-x64 --self-contained true -o build/winui
+          if ($LASTEXITCODE -ne 0) { throw 'TURKUAZ_WINUI_BUILD_FAILED' }
+          dotnet publish turkuaz-engine/src/TurkuazInstaller.Cli/TurkuazInstaller.Cli.csproj -c Release -r win-x64 --self-contained true -o build/cli
+          if ($LASTEXITCODE -ne 0) { throw 'TURKUAZ_CLI_BUILD_FAILED' }
+          ./turkuaz-engine/tools/New-CombinedDistribution.ps1 -BootstrapRoot build/bootstrap -WinUiRoot build/winui -CliRoot build/cli -OutputRoot build/RagnarTurkuazQA/core
+          if (-not $?) { throw 'TURKUAZ_COMBINED_DISTRIBUTION_FAILED' }
+
+      - name: Build QA manifest provisioner and combine package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet publish beam/tools/windows/ragnar-turkuaz-qa/Ragnar.QaProvisioner.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o build/provisioner
+          if ($LASTEXITCODE -ne 0) { throw 'QA_PROVISIONER_BUILD_FAILED' }
+          $root = 'build/RagnarTurkuazQA'
+          Copy-Item -LiteralPath 'build/RagnarTurkuazQA/core/TurkuazInstaller.Bootstrapper.exe' -Destination $root
+          Copy-Item -LiteralPath 'build/RagnarTurkuazQA/core/app' -Destination $root -Recurse
+          Copy-Item -LiteralPath 'build/RagnarTurkuazQA/core/cli' -Destination $root -Recurse
+          New-Item -ItemType Directory -Force "$root/qa" | Out-Null
+          Copy-Item -LiteralPath 'build/provisioner/Ragnar.QaProvisioner.exe' -Destination "$root/qa/Ragnar.QaProvisioner.exe"
+          Copy-Item -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/ui-profile.yml' -Destination "$root/qa/ui-profile.yml"
+          Copy-Item -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/Start-RagnarTurkuazQA.cmd' -Destination "$root/Start-RagnarTurkuazQA.cmd"
+          Copy-Item -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/Uninstall-RagnarTurkuazQA.cmd' -Destination "$root/Uninstall-RagnarTurkuazQA.cmd"
+          Copy-Item -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/README.md' -Destination "$root/README.md"
+          Remove-Item -LiteralPath "$root/core" -Recurse -Force
+
+      - name: Exercise actual TurkuazInstaller signed local QA install and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = (Resolve-Path 'build/RagnarTurkuazQA').Path
+          & "$root/qa/Ragnar.QaProvisioner.exe" prepare $root
+          if ($LASTEXITCODE -ne 0) { throw 'QA_CMS_PROVISION_FAILED' }
+          $manifest = Join-Path $root 'qa/installer-manifest.yml'
+          $sig = "$manifest.p7s"
+          if (-not (Test-Path $manifest) -or -not (Test-Path $sig)) { throw 'QA_DETACHED_CMS_MISSING' }
+          $target = Join-Path $env:LOCALAPPDATA 'Programs/RagnarClassicTurkuazQA'
+          & "$root/cli/TurkuazInstaller.Cli.exe" install --package levelupgt.ragnar-classic-preview --manifest $manifest --channel stable --target $target
+          if ($LASTEXITCODE -ne 0) { throw 'TURKUAZ_REAL_QA_INSTALL_FAILED' }
+          if (-not (Test-Path (Join-Path $target 'Update.exe'))) { throw 'VELOPACK_INSTALL_NOT_FOUND' }
+          & "$root/cli/TurkuazInstaller.Cli.exe" uninstall --package levelupgt.ragnar-classic-preview
+          if ($LASTEXITCODE -ne 0) { throw 'TURKUAZ_REAL_QA_UNINSTALL_FAILED' }
+          & "$root/qa/Ragnar.QaProvisioner.exe" cleanup $root
+          if ($LASTEXITCODE -ne 0) { throw 'QA_CONFIG_CLEANUP_FAILED' }
+          Remove-Item -LiteralPath $manifest,$sig -Force
+          Write-Host 'RAGNAR_TURKUAZ_REAL_SIGNED_LOCAL_VELOPACK_QA_OK'
+
+      - name: Build compact one-file Ragnar setup wizard
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'build/RagnarTurkuazQA'
+          $setup = (Resolve-Path "$root/payload/RagnarClassicPreview-Setup.exe").Path
+          $sha = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          $source = (Resolve-Path 'beam/tools/windows/ragnar-turkuaz-qa/RagnarSetupWizard.cpp').Path
+          $view = (Resolve-Path 'beam/tools/windows/ragnar-turkuaz-qa/RagnarSetupWindow.cpp').Path
+          $icon = if (Test-Path 'beam/tools/windows/ragnar-turkuaz-qa/branding/icon.ico') {
+            (Resolve-Path 'beam/tools/windows/ragnar-turkuaz-qa/branding/icon.ico').Path
+          } else { (Resolve-Path 'beam/beam-ui/icons/icon.ico').Path }
+          New-Item -ItemType Directory -Force 'build/wizard','dist' | Out-Null
+          "#define RAGNAR_EMBEDDED_SETUP_SHA256 L`"$sha`"" |
+            Set-Content -LiteralPath 'build/wizard/setup_hash.h' -Encoding ascii
+          $manifest = (Resolve-Path 'beam/tools/windows/ragnar-turkuaz-qa/ragnar-setup.manifest').Path
+          $setupRc = $setup.Replace('\','\\')
+          $iconRc = $icon.Replace('\','\\')
+          $manifestRc = $manifest.Replace('\','\\')
+          $concept = 'beam/tools/windows/ragnar-turkuaz-qa/branding/concept-c-background.png'
+          $conceptResource = ''
+          if (Test-Path -LiteralPath $concept -PathType Leaf) {
+            $artSha = (Get-FileHash -LiteralPath $concept -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($artSha -ne '14b004262f8133cbd08cf784ba91ef2070886c185f9d2fbc7b8e32d432b7766b') { throw 'TRO_CONCEPT_C_HASH_MISMATCH' }
+            $conceptRc = (Resolve-Path -LiteralPath $concept).Path.Replace('\','\\')
+            $conceptResource = '102 RCDATA "' + $conceptRc + '"'
+          }
+          @"
+          101 RCDATA "$setupRc"
+          1 ICON "$iconRc"
+          1 24 "$manifestRc"
+          $conceptResource
+          "@ | Set-Content -LiteralPath 'build/wizard/setup.rc' -Encoding utf8
+          rc /nologo /fo build/wizard/setup.res build/wizard/setup.rc
+          if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_RC_EMBED_FAILED' }
+          $identity = Get-Content build/wizard/identity.json -Raw | ConvertFrom-Json
+          $outputSetup = Join-Path 'dist' $identity.public_setup_name
+          cl /nologo /std:c++17 /utf-8 /O2 /EHsc /MT /DUNICODE /D_UNICODE /I build/wizard $source $view build/wizard/setup.res /link /MANIFEST:NO /SUBSYSTEM:WINDOWS /OUT:$outputSetup
+          if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_NATIVE_WIZARD_BUILD_FAILED' }
+          $exe = (Resolve-Path $outputSetup).Path
+          mt.exe -nologo "-inputresource:$exe;#1" -out:build/wizard/embedded.manifest
+          if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_EMBEDDED_MANIFEST_MISSING' }
+          $embeddedManifest = Get-Content -LiteralPath 'build/wizard/embedded.manifest' -Raw
+          if ($embeddedManifest -notmatch 'name="Microsoft.Windows.Common-Controls"\s+version="6\.0\.0\.0"') {
+            throw 'RAGNAR_COMCTL32_V6_MANIFEST_MISSING'
+          }
+          $imports = (& dumpbin.exe /imports $exe | Out-String)
+          if ($LASTEXITCODE -ne 0 -or $imports -match '(?i)COMCTL32\.DLL') {
+            throw 'RAGNAR_STATIC_COMCTL_ORDINAL_IMPORT_FORBIDDEN'
+          }
+          & $exe --verify-payload
+          if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_EMBEDDED_SHA256_CHECK_FAILED' }
+          & $exe --verify-ui-contract
+          if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_NATIVE_WINDOW_CONTRACT_FAILED' }
+          & $exe --verify-dialog-runtime
+          if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_COMCTL32_V6_RUNTIME_MISSING' }
+          $viewSource = Get-Content -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/RagnarSetupWindow.cpp' -Raw
+          $backend = Get-Content -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/RagnarSetupWizard.cpp' -Raw
+          if ($backend -notmatch '--silent --installto' -or $viewSource -notmatch 'RagnarSilentInstall' -or $viewSource -notmatch 'Page::Installing') {
+            throw 'RAGNAR_SPLASH_SINGLE_WINDOW_OR_SILENT_SETUP_MISSING'
+          }
+          Write-Host 'RAGNAR_BRANDED_SINGLE_WINDOW_UI_OK'
+          Write-Host 'RAGNAR_TASKDIALOG_RUNTIME_AND_MANIFEST_OK'
+          $single = @(Get-ChildItem -LiteralPath dist -File -Filter '*.exe')
+          if ($single.Count -ne 1) { throw 'SINGLE_INSTALLER_INVENTORY_INVALID' }
+          $size = $single[0].Length
+          if ($size -gt 50000000 -or $size -lt 1000000) { throw "SINGLE_INSTALLER_SIZE_UNEXPECTED_$size" }
+          $outSha = (Get-FileHash $single[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "EXE=$($single[0].Name)" | Set-Content 'dist/CHECKSUM.txt'
+          "SHA256=$outSha" | Add-Content 'dist/CHECKSUM.txt'
+          "COMMIT=$env:GITHUB_SHA" | Add-Content 'dist/CHECKSUM.txt'
+          "SOURCE_COMMIT=$($identity.source_commit)" | Add-Content 'dist/CHECKSUM.txt'
+          "PROFILE_ID=$($identity.profile_id)" | Add-Content 'dist/CHECKSUM.txt'
+          "INSTALLER_VERSION=$($identity.installer_version)" | Add-Content 'dist/CHECKSUM.txt'
+          "PayloadSHA256=$sha" | Add-Content 'dist/CHECKSUM.txt'
+          "TEST_ONLY=unsigned; no production release" | Add-Content 'dist/CHECKSUM.txt'
+          Copy-Item build/wizard/identity.json dist/client-identity.json
+          Write-Host "RAGNAR_TURKUAZ_COMPACT_WIZARD_OK bytes=$size sha256=$outSha profile=$($identity.profile_id) backend=Velopack_verified_by_Turkuaz_QA"
+
+      - name: Upload only user-facing installer EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: Turkuaz-Ragnarok-Online-preview-qa-${{ github.sha }}-TEST-ONLY
+          path: |
+            dist/Turkuaz-Ragnarok-Online-Setup.exe
+            dist/CHECKSUM.txt
+            dist/client-identity.json
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
