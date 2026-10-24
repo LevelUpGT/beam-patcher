@@ -1,5 +1,5 @@
 # Dosya Yolu: tools/windows/ragnar-turkuaz-qa/ui-profile.yml
-# Amac: Ragnar Classic TurkuazInstaller test arayuzu marka ve Turkce metinleri
+# Amac: Turkuaz Ragnarok Online test arayuzu marka ve Turkce metinleri
 # Modul - Config YAML
 # Version: 0.1.0-qa
 # Aciklama: Standart WinUI branding contract; oyuna ve update guvenligine etki etmez
@@ -8,9 +8,9 @@
 schema_version: 1
 culture: tr-TR
 branding:
-  window_title: "Ragnar Ragnarok Online | Kurulum Testi"
-  header_title: "RAGNAR RAGNAROK ONLINE"
-  header_subtitle: "Turkuaz Installer | Klasik istemci önizlemesi"
+  window_title: "Turkuaz Ragnarok Online | Kurulum Testi"
+  header_title: "TURKUAZ RAGNAROK ONLINE"
+  header_subtitle: "Turkuaz Installer | Görsel QA önizleme"
   footer: "LevelUpGT • QA önizleme • Oyun dosyalarına dokunulmaz"
 labels:
   install: "Kur"

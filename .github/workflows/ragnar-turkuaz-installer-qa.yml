@@ -82,6 +82,8 @@ jobs:
         shell: pwsh
         working-directory: beam
         run: |
+          py -3 -B -m unittest discover -s tools/tests -p 'test_setup_identity.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'SETUP_IDENTITY_TEST_FAILED' }
           py -3 -B -m unittest discover -s tools/tests -p 'test_ragnar_classic_theme.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'CLASSIC_TEST_FAILED' }
           py -3 -B -m unittest discover -s tools/tests -p 'test_ragnar_legacy_theme.py' -v
@@ -284,10 +286,19 @@ jobs:
           $setupRc = $setup.Replace('\','\\')
           $iconRc = $icon.Replace('\','\\')
           $manifestRc = $manifest.Replace('\','\\')
+          $concept = 'beam/tools/windows/ragnar-turkuaz-qa/branding/concept-c-background.png'
+          $conceptResource = ''
+          if (Test-Path -LiteralPath $concept -PathType Leaf) {
+            $artSha = (Get-FileHash -LiteralPath $concept -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($artSha -ne '14b004262f8133cbd08cf784ba91ef2070886c185f9d2fbc7b8e32d432b7766b') { throw 'TRO_CONCEPT_C_HASH_MISMATCH' }
+            $conceptRc = (Resolve-Path -LiteralPath $concept).Path.Replace('\','\\')
+            $conceptResource = '102 RCDATA "' + $conceptRc + '"'
+          }
           @"
           101 RCDATA "$setupRc"
           1 ICON "$iconRc"
           1 24 "$manifestRc"
+          $conceptResource
           "@ | Set-Content -LiteralPath 'build/wizard/setup.rc' -Encoding utf8
           rc /nologo /fo build/wizard/setup.res build/wizard/setup.rc
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_RC_EMBED_FAILED' }

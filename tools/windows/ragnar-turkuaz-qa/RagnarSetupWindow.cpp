@@ -14,12 +14,15 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <gdiplus.h>
+#include <cstring>
 #include "setup_identity.h"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "msimg32.lib")
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "gdiplus.lib")
 
 bool RagnarVerify();
 bool RagnarValidTarget(std::wstring&);
@@ -47,6 +50,9 @@ struct State {
     HWND folder = nullptr, desktop = nullptr, start = nullptr;
     HFONT heading = nullptr, body = nullptr, smallFont = nullptr;
     HBRUSH formBackground = nullptr;
+    ULONG_PTR gdiplusToken = 0;
+    IStream* artStream = nullptr;
+    Gdiplus::Bitmap* artBitmap = nullptr;
     Page page = Page::Welcome;
     int pulse = 0;
     std::wstring destination, error;
@@ -87,6 +93,47 @@ void Solid(HDC dc, RECT rect, COLORREF color) {
     FillRect(dc, &rect, brush);
     DeleteObject(brush);
 }
+// Optional, SHA-pinned image resource (ID 102). Fallback paint stays functional.
+void LoadConceptBackground() {
+    Gdiplus::GdiplusStartupInput input{};
+    if (Gdiplus::GdiplusStartup(&state.gdiplusToken, &input, nullptr) != Gdiplus::Ok)
+        return;
+    HRSRC resource = FindResourceW(nullptr, MAKEINTRESOURCEW(102), RT_RCDATA);
+    if (!resource) return;
+    HGLOBAL data = LoadResource(nullptr, resource);
+    const DWORD count = data ? SizeofResource(nullptr, resource) : 0;
+    const void* src = data ? LockResource(data) : nullptr;
+    if (!src || count < 1024 || count > 16 * 1024 * 1024) return;
+    HGLOBAL allocated = GlobalAlloc(GMEM_MOVEABLE, count);
+    if (!allocated) return;
+    void* writable = GlobalLock(allocated);
+    if (!writable) { GlobalFree(allocated); return; }
+    std::memcpy(writable, src, count);
+    GlobalUnlock(allocated);
+    if (FAILED(CreateStreamOnHGlobal(allocated, TRUE, &state.artStream))) {
+        GlobalFree(allocated);
+        return;
+    }
+    state.artBitmap = Gdiplus::Bitmap::FromStream(state.artStream);
+    if (!state.artBitmap || state.artBitmap->GetLastStatus() != Gdiplus::Ok) {
+        delete state.artBitmap;
+        state.artBitmap = nullptr;
+        state.artStream->Release();
+        state.artStream = nullptr;
+    }
+}
+void PaintConceptBackground(HDC dc) {
+    if (!state.artBitmap) return;
+    RECT client{};
+    GetClientRect(state.hwnd, &client);
+    const int width = client.right, height = client.bottom;
+    if (width <= 0 || height <= 0) return;
+    Gdiplus::Graphics graphics(dc);
+    graphics.DrawImage(state.artBitmap, Gdiplus::Rect(0, 0, width, height));
+    // Readability on the light fantasy landscape; no fake progress overlay.
+    Gdiplus::SolidBrush shade(Gdiplus::Color(148, 7, 20, 41));
+    graphics.FillRectangle(&shade, Gdiplus::Rect(0, 0, width, height));
+}
 void Paint(HDC dc) {
     TRIVERTEX stops[2]{};
     stops[0].x = 0; stops[0].y = 0;
@@ -95,6 +142,7 @@ void Paint(HDC dc) {
     stops[1].Red = 0x0c00; stops[1].Green = 0x5900; stops[1].Blue = 0x6800;
     GRADIENT_RECT rect{0,1};
     GradientFill(dc, stops, 2, &rect, 1, GRADIENT_FILL_RECT_H);
+    PaintConceptBackground(dc);
     Solid(dc, RECT{0,175,W,178}, RGB(36,220,194));
     Print(dc, state.heading, RGB(250,252,255), TRO_PRODUCT_NAME, 40, 38, 735, 74);
     Print(dc, state.body, RGB(213,239,240),
@@ -244,6 +292,7 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
       case WM_CREATE: {
         state.hwnd = window;
+        LoadConceptBackground();
         state.heading = CreateFontW(-37,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,
                                     DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
         state.body = CreateFontW(-24,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,
@@ -342,6 +391,9 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
         KillTimer(window,kPulse);
         for (HFONT font : {state.heading,state.body,state.smallFont}) if (font) DeleteObject(font);
         if (state.formBackground) DeleteObject(state.formBackground);
+        delete state.artBitmap;
+        if (state.artStream) state.artStream->Release();
+        if (state.gdiplusToken) Gdiplus::GdiplusShutdown(state.gdiplusToken);
         PostQuitMessage(0);
         return 0;
     }

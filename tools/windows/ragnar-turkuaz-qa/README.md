@@ -38,10 +38,11 @@ The previous 177 MB developer ZIP carried .NET/WinUI, TurkuazInstaller CLI,
 provisioner, and a nested Velopack Setup.exe. That ZIP is a **QA development
 bundle**, not an appropriate user installer.
 
-The replacement Actions artifact contains only:
+The replacement Actions artifact contains these QA distribution files:
 
-- RagnarClassic-Turkuaz-Setup.exe (standalone x64 native Windows wizard)
+- Turkuaz-Ragnarok-Online-Setup.exe (standalone x64 native Windows wizard)
 - CHECKSUM.txt (SHA-256 metadata)
+- client-identity.json (internal QA build provenance, not a player-visible edition)
 
 Actions automatically delivers these files inside an outer ZIP. There is no
 nested distribution ZIP, no app/ or cli/ folder and no developer executable
@@ -190,3 +191,14 @@ Windows 10 pixel smoke.
   optional application launch uses the same update entrypoint.
 - The QA package is preview-only; private game feed readiness does not
   determine whether the local Velopack install is considered successful.
+
+
+## Canonical Turkuaz Ragnarok Online identity (2026-10-24)
+
+- Player-visible name: **Turkuaz Ragnarok Online**. The player-visible setup filename remains `Turkuaz-Ragnarok-Online-Setup.exe`.
+- Canonical build identity is sourced from `client-profiles.json`, verified by `generate_setup_identity.py`, then recorded in `client-identity.json` and CHECKSUM.txt.
+- Current artifact profile is **preview-qa** (read-only visual preview), with `client_year=null`, `packetver=null` and `production_publish_allowed=false`. It is **not** an actual 2015 or 2022 client; old package ID, main EXE and app-data root remain compatible.
+- `classic-2015` and `renewal-2022` are *reserved identities only*. This QA workflow refuses to package them until exact authorized game-client binaries, packet version, content/provenance, patch readiness and separate integration tests are supplied. The current 2015 alias/patch channel and the 2022 `ready:false` policy are unchanged.
+- Internal artifact name includes the distinct client profile and immutable Beam source SHA. Do not conflate `installer_version` (SemVer), `client_year`, actual client `client_build`, `packetver` or patch `channel`.
+- The selected **Concept C** visual is supplied separately as `branding/concept-c-background.png` (source SHA256 `14b004262f8133cbd08cf784ba91ef2070886c185f9d2fbc7b8e32d432b7766b`). A verified, approved PNG at that path is embedded as native background resource 102 when present. Otherwise the existing teal gradient remains; **absent artwork must not be presented as integrated**. Binary artwork is never downloaded from a third-party CDN during CI.
+- Signed production release, end-user Windows 10/11 DPI and antivirus acceptance remain pending.
