@@ -1,7 +1,7 @@
 // Dosya Yolu: tools/windows/ragnar-turkuaz-qa/RagnarSetupWindow.cpp
 // Amac: Adobe tarzi tek ekran Ragnar kurulum akisini tasiyan native View
 // Modul - Win32 Windows UI C++
-// Version: 0.3.3-qa
+// Version: 0.4.0-qa
 // Aciklama: Splash is first; options and progress stay in one window; no extra dialogs
 // Bagimli Oldugu Katman: RagnarSetupWizard.cpp adapter | Windows UI / GDI
 
@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include "setup_identity.h"
 
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
@@ -37,7 +38,7 @@ constexpr int kGo = 2001, kBack = 2002, kBrowse = 2003;
 constexpr int kPath = 2004, kDesktop = 2005, kStart = 2006;
 constexpr UINT kDone = WM_APP + 15;
 constexpr UINT_PTR kPulse = 12;
-constexpr wchar_t kTitle[] = L"Ragnar Ragnarok Online — Kurulum";
+constexpr wchar_t kTitle[] = TRO_WINDOW_TITLE;
 constexpr wchar_t kSetupName[] = L"RagnarClassicPreview-Setup.exe";
 enum class Page { Welcome, Options, Installing, Complete, Failed };
 struct Result { bool success = false; std::wstring message; };
@@ -65,7 +66,7 @@ void SetPage(Page page) {
     Show(state.back, choosing || page == Page::Complete || page == Page::Failed);
     if (page == Page::Welcome) Caption(state.go, L"DEVAM ET  →");
     if (page == Page::Options) Caption(state.go, L"KURULUMU BAŞLAT");
-    if (page == Page::Complete) Caption(state.go, L"RAGNAR'I AÇ");
+    if (page == Page::Complete) Caption(state.go, L"ÖNİZLEMEYİ AÇ");
     if (page == Page::Failed) Caption(state.go, L"TEKRAR DENE");
     Caption(state.back, page == Page::Options ? L"GERİ" : L"KAPAT");
     if (page == Page::Installing) SetTimer(state.hwnd, kPulse, 80, nullptr);
@@ -95,11 +96,11 @@ void Paint(HDC dc) {
     GRADIENT_RECT rect{0,1};
     GradientFill(dc, stops, 2, &rect, 1, GRADIENT_FILL_RECT_H);
     Solid(dc, RECT{0,175,W,178}, RGB(36,220,194));
-    Print(dc, state.heading, RGB(250,252,255), L"RAGNAR", 40, 38, 640, 74);
+    Print(dc, state.heading, RGB(250,252,255), TRO_PRODUCT_NAME, 40, 38, 735, 74);
     Print(dc, state.body, RGB(213,239,240),
-          L"Ragnarok Online  /  Classic Visual Preview", 44, 119, 680, 30);
+          L"Classic Visual Preview  /  Kurulum", 44, 119, 680, 30);
     Print(dc, state.smallFont, RGB(145,202,211),
-          L"TURKUAZ   •   KURULUM   •   v0.1.0 QA", 44, 150, 680, 26);
+          (std::wstring(L"TURKUAZ   •   QA   •   v") + TRO_INSTALLER_VERSION).c_str(), 44, 150, 680, 26);
     RECT content{};
     GetClientRect(state.hwnd, &content);
     const int footerY = std::max(0, static_cast<int>(content.bottom) - 34);
@@ -110,7 +111,7 @@ void Paint(HDC dc) {
     switch (state.page) {
       case Page::Welcome:
         Print(dc, state.body, RGB(255,255,255),
-              L"Ragnar dünyasına hoş geldin", 44, 218, 670, 38);
+              L"Turkuaz dünyasına hoş geldin", 44, 218, 670, 38);
         Print(dc, state.smallFont, RGB(215,235,239),
               L"Bu kurulumda hedef klasörü ve kısayolları seçebilirsin.\n"
               L"Tüm adımlar bu pencerede tamamlanacak.", 44, 268, 670, 80, DT_WORDBREAK);
@@ -128,7 +129,7 @@ void Paint(HDC dc) {
         break;
       case Page::Installing: {
         Print(dc, state.body, RGB(255,255,255),
-              L"Ragnar kuruluyor", 44, 214, 670, 40);
+              L"Turkuaz Ragnarok Online kuruluyor", 44, 214, 670, 40);
         Print(dc, state.smallFont, RGB(219,237,239),
               L"Dosyalar sessiz olarak kuruluyor. Bu pencereyi kapatmayın.",
               44, 270, 680, 54, DT_WORDBREAK);
@@ -148,7 +149,7 @@ void Paint(HDC dc) {
               L"Kurulum tamamlandı", 44, 220, 670, 45);
         Print(dc, state.smallFont, RGB(218,242,235),
               state.error.empty()
-                  ? L"Ragnar Classic önizlemesi hazır. İstersen şimdi açabilir\n"
+                  ? L"Turkuaz önizlemesi hazır. İstersen şimdi açabilir\n"
                     L"veya Kapat seçeneğiyle kurulumdan çıkabilirsin."
                   : state.error.c_str(),
               44, 278, 666, 72, DT_WORDBREAK);
@@ -222,7 +223,7 @@ void ShowFolderChooser() {
     DWORD options = 0;
     dialog->GetOptions(&options);
     dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
-    dialog->SetTitle(L"Ragnar kurulumunun ana klasörünü seç");
+    dialog->SetTitle(L"Turkuaz Ragnarok Online kurulum klasörü seç");
     if (SUCCEEDED(dialog->Show(state.hwnd))) {
         IShellItem* item = nullptr;
         if (SUCCEEDED(dialog->GetResult(&item)) && item) {
@@ -243,7 +244,7 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
       case WM_CREATE: {
         state.hwnd = window;
-        state.heading = CreateFontW(-55,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,
+        state.heading = CreateFontW(-37,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,
                                     DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
         state.body = CreateFontW(-24,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,
                                  DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
