@@ -1,7 +1,7 @@
 // Dosya Yolu: tools/windows/ragnar-turkuaz-qa/RagnarSetupWindow.cpp
 // Amac: Adobe tarzi tek ekran Ragnar kurulum akisini tasiyan native View
 // Modul - Win32 Windows UI C++
-// Version: 0.3.0-qa
+// Version: 0.3.2-qa
 // Aciklama: Splash is first; options and progress stay in one window; no extra dialogs
 // Bagimli Oldugu Katman: RagnarSetupWizard.cpp adapter | Windows UI / GDI
 
@@ -31,7 +31,8 @@ bool RagnarOpenInstalled(const std::wstring&, DWORD&);
 bool RagnarDialogAvailable();
 
 namespace {
-constexpr int W = 780, H = 545;
+// Size the window for footer, option controls, and Windows non-client borders.
+constexpr int W = 810, H = 640;
 constexpr int kGo = 2001, kBack = 2002, kBrowse = 2003;
 constexpr int kPath = 2004, kDesktop = 2005, kStart = 2006;
 constexpr UINT kDone = WM_APP + 15;
@@ -99,8 +100,13 @@ void Paint(HDC dc) {
           L"Ragnarok Online  /  Classic Visual Preview", 44, 119, 680, 30);
     Print(dc, state.smallFont, RGB(145,202,211),
           L"TURKUAZ   •   KURULUM   •   v0.1.0 QA", 44, 150, 680, 26);
+    RECT content{};
+    GetClientRect(state.hwnd, &content);
+    const int footerY = std::max(460, content.bottom - 34);
+    Solid(dc, RECT{40, footerY - 13, content.right - 40, footerY - 12}, RGB(39, 142, 157));
     Print(dc, state.smallFont, RGB(183,217,222),
-          L"LevelUpGT  •  Yalnızca test  •  Oyun dosyaları değiştirilmez", 42, 496, 700, 25);
+          L"LevelUpGT  •  Yalnızca test  •  Oyun dosyaları değiştirilmez",
+          42, footerY, content.right - 80, 26);
     switch (state.page) {
       case Page::Welcome:
         Print(dc, state.body, RGB(255,255,255),
@@ -244,11 +250,14 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
         state.smallFont = CreateFontW(-17,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,
                                   DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
         state.formBackground = CreateSolidBrush(RGB(20,71,83));
+        RECT client{};
+        GetClientRect(window, &client);
+        const int navY = client.bottom - 104;
         state.go = CreateWindowW(L"BUTTON",L"DEVAM ET  →",
                                  WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON,
-                                 515,438,220,42,window,reinterpret_cast<HMENU>(kGo),nullptr,nullptr);
+                                 515,navY,220,42,window,reinterpret_cast<HMENU>(kGo),nullptr,nullptr);
         state.back = CreateWindowW(L"BUTTON",L"GERİ",WS_CHILD|BS_PUSHBUTTON,
-                                   372,438,125,42,window,reinterpret_cast<HMENU>(kBack),nullptr,nullptr);
+                                   372,navY,125,42,window,reinterpret_cast<HMENU>(kBack),nullptr,nullptr);
         state.folder = CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",
                                       WS_CHILD|ES_AUTOHSCROLL|WS_TABSTOP,
                                       44,278,563,32,window,reinterpret_cast<HMENU>(kPath),nullptr,nullptr);
@@ -344,11 +353,18 @@ bool SetupWindow(HINSTANCE instance, bool visible) {
     cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);
     cls.hIcon=LoadIconW(instance,MAKEINTRESOURCEW(1));
     if (!RegisterClassExW(&cls) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) return false;
-    const int x=(GetSystemMetrics(SM_CXSCREEN)-W)/2;
-    const int y=(GetSystemMetrics(SM_CYSCREEN)-H)/2;
+    RECT work{};
+    if (!SystemParametersInfoW(SPI_GETWORKAREA,0,&work,0)) {
+        work = RECT{0,0,GetSystemMetrics(SM_CXSCREEN),GetSystemMetrics(SM_CYSCREEN)};
+    }
+    // Keep the full window inside the available work area, including taskbar.
+    const int width = std::min(W,work.right-work.left);
+    const int height = std::min(H,work.bottom-work.top);
+    const int x=work.left+(work.right-work.left-width)/2;
+    const int y=work.top+(work.bottom-work.top-height)/2;
     HWND window=CreateWindowExW(WS_EX_APPWINDOW,cls.lpszClassName,kTitle,
                                WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,
-                               x,y,W,H,nullptr,nullptr,instance,nullptr);
+                               x,y,width,height,nullptr,nullptr,instance,nullptr);
     if (!window) return false;
     if (visible) { ShowWindow(window,SW_SHOW); UpdateWindow(window); }
     return true;

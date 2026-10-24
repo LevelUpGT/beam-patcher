@@ -172,3 +172,21 @@ On failure, Velopack's local log location is shown in the error page.
 CI checks the view's real hidden-window HWND/controls with
 `--verify-ui-contract` but does not claim this is an end-user
 Windows 10 pixel smoke.
+
+## Screenshot QA fixes (2026-10-24)
+
+- Older v0.3 native window drew its footer at a fixed y=496 and located
+  navigation buttons at y=438. On Windows with different DPI/non-client frame
+  metrics the footer was clipped. New layout uses a larger window within the
+  monitor work area; footer and navigation are anchored to the actual client
+  bottom. Real 100/125/150% DPI screenshots are still required.
+- A successful Velopack install was incorrectly considered a failure when
+  `<install-root>/RagnarClassicPreview.exe` was missing. Velopack stores the
+  real binary in `current/RagnarClassicPreview.exe` while the root stub can
+  use the pack title. Validation now checks `Update.exe` and the real binary
+  under `current/`.
+- Desktop and Start shortcuts use `Update.exe start RagnarClassicPreview.exe`
+  to avoid guessing the Velopack launcher stub's root filename; final
+  optional application launch uses the same update entrypoint.
+- The QA package is preview-only; private game feed readiness does not
+  determine whether the local Velopack install is considered successful.

@@ -1,7 +1,7 @@
 // Dosya Yolu: tools/windows/ragnar-turkuaz-qa/RagnarSetupWizard.cpp
 // Amac: Branded wizard icin dogrulanmis Velopack islem ve dosya erisim adapterleri
 // Modul - Windows native C++ Setup UI
-// Version: 0.3.0-qa
+// Version: 0.3.2-qa
 // Aciklama: Embedded verified Velopack Setup, klasor secimi, kısayol tercihleri ve marka splash
 // Bagimli Oldugu Katman: Velopack Setup | TurkuazInstaller preview QA build
 // Note: Legacy dialog helpers are not invoked by the standalone QA wizard.
@@ -387,11 +387,14 @@ bool RagnarSilentInstall(const std::wstring& setup, const std::wstring& target,
                 L"\nGünlük: " + logPath;
         return false;
     }
-    auto updater = target + L"\\Update.exe";
-    auto launcher = RagnarLauncherPath(target);
+    // Velopack's main binary is under current/, the root stub filename can
+    // differ from --mainExe when --packTitle is provided. Never infer it.
+    const auto updater = target + L"\\Update.exe";
+    const auto currentExe = target + L"\\current\\RagnarClassicPreview.exe";
     if (GetFileAttributesW(updater.c_str()) == INVALID_FILE_ATTRIBUTES ||
-        GetFileAttributesW(launcher.c_str()) == INVALID_FILE_ATTRIBUTES) {
-        error = L"Kurulumdan sonra gerekli Ragnar dosyaları bulunamadı.";
+        GetFileAttributesW(currentExe.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        error = L"Kurulum dosyaları eksik: Update.exe veya current\\RagnarClassicPreview.exe "
+                L"bulunamadı.\\nGünlük: " + logPath;
         return false;
     }
     DeleteFileW(logPath.c_str());
@@ -407,7 +410,11 @@ bool RagnarCreateShortcut(bool desktop, const std::wstring& root) {
     if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
                                 IID_PPV_ARGS(&link)))) return false;
     bool saved = false;
-    if (SUCCEEDED(link->SetPath(RagnarLauncherPath(root).c_str())) &&
+    // Update.exe start is Velopack's stable launch contract across upgrades.
+    const auto updater = root + L"\\Update.exe";
+    if (SUCCEEDED(link->SetPath(updater.c_str())) &&
+        SUCCEEDED(link->SetArguments(L"start RagnarClassicPreview.exe")) &&
+        SUCCEEDED(link->SetWorkingDirectory(root.c_str())) &&
         SUCCEEDED(link->SetDescription(L"Ragnar Classic Visual Preview (QA)"))) {
         IPersistFile* persist = nullptr;
         if (SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(&persist)))) {
@@ -419,18 +426,19 @@ bool RagnarCreateShortcut(bool desktop, const std::wstring& root) {
     return saved;
 }
 bool RagnarOpenInstalled(const std::wstring& root, DWORD& error) {
-    const auto exe = RagnarLauncherPath(root);
-    if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    const auto updater = root + L"\\Update.exe";
+    if (GetFileAttributesW(updater.c_str()) == INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesW((root + L"\\current\\RagnarClassicPreview.exe").c_str()) == INVALID_FILE_ATTRIBUTES) {
         error = ERROR_FILE_NOT_FOUND;
         return false;
     }
-    std::wstring command = L"\"" + exe + L"\"";
+    std::wstring command = L"\\"" + updater + L"\\" start RagnarClassicPreview.exe";
     std::vector<wchar_t> args(command.begin(), command.end());
     args.push_back(0);
     STARTUPINFOW startup{sizeof(startup)};
     PROCESS_INFORMATION process{};
-    if (!CreateProcessW(exe.c_str(), args.data(), nullptr, nullptr, FALSE, 0,
-                        nullptr, nullptr, &startup, &process)) {
+    if (!CreateProcessW(updater.c_str(), args.data(), nullptr, nullptr, FALSE,
+                        0, nullptr, root.c_str(), &startup, &process)) {
         error = GetLastError();
         return false;
     }
