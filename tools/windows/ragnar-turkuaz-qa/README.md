@@ -202,3 +202,42 @@ Windows 10 pixel smoke.
 - Internal artifact name includes the distinct client profile and immutable Beam source SHA. Do not conflate `installer_version` (SemVer), `client_year`, actual client `client_build`, `packetver` or patch `channel`.
 - The selected **Concept C** visual is supplied separately as `branding/concept-c-background.png` (source SHA256 `14b004262f8133cbd08cf784ba91ef2070886c185f9d2fbc7b8e32d432b7766b`). A verified, approved PNG at that path is embedded as native background resource 102 when present. Otherwise the existing teal gradient remains; **absent artwork must not be presented as integrated**. Binary artwork is never downloaded from a third-party CDN during CI.
 - Signed production release, end-user Windows 10/11 DPI and antivirus acceptance remain pending.
+
+## Invalid external PE repackager — Windows 10 loader failure (2026-10-24)
+
+A user reported the dialog `Bu uygulama bilgisayarınızda çalışamıyor`
+after launching the separately distributed **22,731,776-byte, unsigned**
+three-background EXE, SHA-256
+`7a0fd398e7d668046a74f7c6f762b945fc564db1ed16cd4ae302ef41becf9746`.
+
+That artifact was **not** compiled by the pinned Windows CI pipeline.
+It was derived from the 14,417,408-byte tested base EXE, SHA-256
+`900182153d4c81f1b723beaf0fe871b9ac51bd83f277a678f2deae0f89431281`,
+using a custom offline PE section/resource postprocessor. Linux PE header
+and embedded resource/hash inspection did **not** constitute native Windows
+loader verification. The custom resource rewrite is now **rejected for QA**;
+the original base Windows CI success must not be represented as a smoke
+success for the rewritten binary. The Firefox AV warning being absent on
+this download also does **not** certify the EXE as safe.
+
+**Safe packaging paths:**
+1. Preferred: check in the three reviewed and SHA-256-pinned PNG source
+   files and have Windows `rc.exe` / `cl.exe` embed RCDATA IDs 102–104
+   **during the original signed-source CI build**, followed by actual
+   `--verify-payload`, `--verify-artwork-present`,
+   `--verify-ui-contract` and `--verify-dialog-runtime` process tests.
+2. Interim disposable-QA option: start from the above exact CI base EXE,
+   validate all three original PNG hashes, and use **Windows' own**
+   `BeginUpdateResourceW` / `UpdateResourceW` /
+   `EndUpdateResourceW` rather than writing PE headers/sections manually.
+   Before offering any EXE, test those four command switches on the **final**
+   binary in Windows; reject on any nonzero status, process creation failure
+   or timeout. Do not claim Windows acceptance until actually observed.
+
+The temporary self-contained user QA archive contains a reviewable local
+`Build-Windows-QA.ps1` for option 2; it does not contain an already-patched
+EXE. It cannot be promoted to a release through the source workflow.
+No antivirus exclusions, script policy modifications, app installer releases,
+game patches or private feed changes are authorized. Genuine Windows
+10/11 visual/installation, shortcuts and uninstallation tests are still
+required once the binary passes the loader smoke.
