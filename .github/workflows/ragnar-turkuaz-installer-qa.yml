@@ -1,7 +1,7 @@
 # Dosya Yolu: .github/workflows/ragnar-turkuaz-installer-qa.yml
 # Amac: Ragnar Classic read-only preview icin TurkuazInstaller Community kullanarak Windows QA paketi uretmek
 # Modul - GitHub Actions Windows QA YAML
-# Version: 0.4.0-qa
+# Version: 0.5.0-qa
 # Aciklama: Preview-only Rust + Velopack + pinned TurkuazInstaller WinUI/CLI; ephemeral local trust, no release
 # Bagimli Oldugu Katman: Rust preview-only | TurkuazInstaller Community | Velopack
 
@@ -82,6 +82,8 @@ jobs:
         shell: pwsh
         working-directory: beam
         run: |
+          py -3 -B -m unittest discover -s tools/tests -p 'test_setup_artwork.py' -v
+          if ($LASTEXITCODE -ne 0) { throw 'SETUP_ARTWORK_TEST_FAILED' }
           py -3 -B -m unittest discover -s tools/tests -p 'test_setup_identity.py' -v
           if ($LASTEXITCODE -ne 0) { throw 'SETUP_IDENTITY_TEST_FAILED' }
           py -3 -B -m unittest discover -s tools/tests -p 'test_ragnar_classic_theme.py' -v
@@ -286,19 +288,17 @@ jobs:
           $setupRc = $setup.Replace('\','\\')
           $iconRc = $icon.Replace('\','\\')
           $manifestRc = $manifest.Replace('\','\\')
-          $concept = 'beam/tools/windows/ragnar-turkuaz-qa/branding/concept-c-background.png'
-          $conceptResource = ''
-          if (Test-Path -LiteralPath $concept -PathType Leaf) {
-            $artSha = (Get-FileHash -LiteralPath $concept -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($artSha -ne '14b004262f8133cbd08cf784ba91ef2070886c185f9d2fbc7b8e32d432b7766b') { throw 'TRO_CONCEPT_C_HASH_MISMATCH' }
-            $conceptRc = (Resolve-Path -LiteralPath $concept).Path.Replace('\','\\')
-            $conceptResource = '102 RCDATA "' + $conceptRc + '"'
-          }
+          $artRoot = 'beam/tools/windows/ragnar-turkuaz-qa/branding'
+          py -3 -B "$artRoot/validate_artwork.py" --root $artRoot --manifest "$artRoot/backgrounds.json" --rc-output build/wizard/artwork.rc --json-output dist/artwork-identity.json
+          if ($LASTEXITCODE -ne 0) { throw 'TRO_ARTWORK_SHA256_OR_INVENTORY_FAILED' }
+          $artwork = Get-Content dist/artwork-identity.json -Raw | ConvertFrom-Json
+          if ($artwork.mode -notin @('gradient-only','approved-artwork')) { throw 'TRO_INVALID_ARTWORK_MODE' }
+          $artworkResource = Get-Content -LiteralPath build/wizard/artwork.rc -Raw
           @"
           101 RCDATA "$setupRc"
           1 ICON "$iconRc"
           1 24 "$manifestRc"
-          $conceptResource
+          $artworkResource
           "@ | Set-Content -LiteralPath 'build/wizard/setup.rc' -Encoding utf8
           rc /nologo /fo build/wizard/setup.res build/wizard/setup.rc
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_RC_EMBED_FAILED' }
@@ -321,6 +321,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_EMBEDDED_SHA256_CHECK_FAILED' }
           & $exe --verify-ui-contract
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_NATIVE_WINDOW_CONTRACT_FAILED' }
+          if ($artwork.mode -eq 'approved-artwork') {
+            & $exe --verify-artwork-present
+            if ($LASTEXITCODE -ne 0) { throw 'TRO_APPROVED_ARTWORK_DECODE_FAILED' }
+            Write-Host 'TRO_THREE_ARTWORK_EMBEDDED_OK'
+          } else {
+            if ($artwork.embedded_count -ne 0) { throw 'TRO_ARTWORK_FALLBACK_METADATA_CONTRADICTION' }
+            Write-Warning 'TRO_GRADIENT_ONLY: artwork files not present in repository; do not claim image acceptance.'
+          }
           & $exe --verify-dialog-runtime
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_COMCTL32_V6_RUNTIME_MISSING' }
           $viewSource = Get-Content -LiteralPath 'beam/tools/windows/ragnar-turkuaz-qa/RagnarSetupWindow.cpp' -Raw
@@ -342,11 +350,13 @@ jobs:
           "PROFILE_ID=$($identity.profile_id)" | Add-Content 'dist/CHECKSUM.txt'
           "INSTALLER_VERSION=$($identity.installer_version)" | Add-Content 'dist/CHECKSUM.txt'
           "PayloadSHA256=$sha" | Add-Content 'dist/CHECKSUM.txt'
+          "ARTWORK_MODE=$($artwork.mode)" | Add-Content 'dist/CHECKSUM.txt'
+          "ARTWORK_COUNT=$($artwork.embedded_count)" | Add-Content 'dist/CHECKSUM.txt'
           "TEST_ONLY=unsigned; no production release" | Add-Content 'dist/CHECKSUM.txt'
           Copy-Item build/wizard/identity.json dist/client-identity.json
           Write-Host "RAGNAR_TURKUAZ_COMPACT_WIZARD_OK bytes=$size sha256=$outSha profile=$($identity.profile_id) backend=Velopack_verified_by_Turkuaz_QA"
 
-      - name: Upload only user-facing installer EXE
+      - name: Upload standalone test setup with explicit artwork inventory
         uses: actions/upload-artifact@v4
         with:
           name: Turkuaz-Ragnarok-Online-preview-qa-${{ github.sha }}-TEST-ONLY
@@ -354,6 +364,7 @@ jobs:
             dist/Turkuaz-Ragnarok-Online-Setup.exe
             dist/CHECKSUM.txt
             dist/client-identity.json
+            dist/artwork-identity.json
           if-no-files-found: error
           retention-days: 3
           compression-level: 0
