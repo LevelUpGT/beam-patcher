@@ -12,8 +12,19 @@ on:
     branches:
       - test/ragnar-turkuaz-installer-qa-20261024
   workflow_dispatch:
+    inputs:
+      require_artwork:
+        description: Require three approved image resources for visual QA
+        type: boolean
+        required: false
+        default: false
   workflow_call:
     inputs:
+      require_artwork:
+        description: Require three approved image resources for visual QA
+        type: boolean
+        required: false
+        default: false
       source_ref:
         description: Immutable Beam commit to build; no private RagnarokClient checkout
         type: string
@@ -293,6 +304,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'TRO_ARTWORK_SHA256_OR_INVENTORY_FAILED' }
           $artwork = Get-Content dist/artwork-identity.json -Raw | ConvertFrom-Json
           if ($artwork.mode -notin @('gradient-only','approved-artwork')) { throw 'TRO_INVALID_ARTWORK_MODE' }
+          if ('${{ inputs.require_artwork }}' -eq 'true' -and $artwork.mode -ne 'approved-artwork') {
+            throw 'TRO_VISUAL_QA_REQUIRES_THREE_EMBEDDED_IMAGES'
+          }
           $artworkResource = Get-Content -LiteralPath build/wizard/artwork.rc -Raw
           @"
           101 RCDATA "$setupRc"
