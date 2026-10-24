@@ -1,7 +1,7 @@
 # Dosya Yolu: .github/workflows/ragnar-turkuaz-installer-qa.yml
 # Amac: Ragnar Classic read-only preview icin TurkuazInstaller Community kullanarak Windows QA paketi uretmek
 # Modul - GitHub Actions Windows QA YAML
-# Version: 0.3.1-qa
+# Version: 0.3.2-qa
 # Aciklama: Preview-only Rust + Velopack + pinned TurkuazInstaller WinUI/CLI; ephemeral local trust, no release
 # Bagimli Oldugu Katman: Rust preview-only | TurkuazInstaller Community | Velopack
 
@@ -150,6 +150,27 @@ jobs:
           if ($setup.Count -ne 1 -or $full.Count -ne 1) { throw 'VELOPACk_OUTPUT_INVENTORY_INVALID' }
           New-Item -ItemType Directory -Force 'build/RagnarTurkuazQA/payload' | Out-Null
           Copy-Item -LiteralPath $setup[0].FullName -Destination 'build/RagnarTurkuazQA/payload/RagnarClassicPreview-Setup.exe'
+
+      - name: Smoke real Velopack silent installation layout
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = @(Get-ChildItem -Path 'build/velopack' -File -Filter '*Setup.exe')
+          if ($setup.Count -ne 1) { throw 'VELOPACK_SETUP_MISSING' }
+          $target = Join-Path $env:RUNNER_TEMP 'RagnarCanonicalInstallLayoutQA'
+          $log = Join-Path $env:RUNNER_TEMP 'RagnarCanonicalInstallLayoutQA.log'
+          if (Test-Path $target) { throw 'UNEXPECTED_EXISTING_QA_TARGET' }
+          & $setup[0].FullName --silent --installto $target --log $log
+          if ($LASTEXITCODE -ne 0) { throw "SILENT_INSTALL_FAILED code=$LASTEXITCODE log=$log" }
+          $updater = Join-Path $target 'Update.exe'
+          $actualExe = Join-Path $target 'current/RagnarClassicPreview.exe'
+          if (-not (Test-Path -LiteralPath $updater -PathType Leaf) -or
+              -not (Test-Path -LiteralPath $actualExe -PathType Leaf)) {
+            throw "VELOPACK_CANONICAL_LAYOUT_MISSING root=$target log=$log"
+          }
+          & $updater --silent uninstall
+          if ($LASTEXITCODE -ne 0) { throw "VELOPACK_UNINSTALL_FAILED code=$LASTEXITCODE" }
+          Write-Host 'RAGNAR_REAL_SILENT_INSTALL_CURRENT_LAYOUT_OK'
 
       - name: Publish pinned TurkuazInstaller Windows distribution
         shell: pwsh
