@@ -1,7 +1,7 @@
 # Dosya Yolu: .github/workflows/ragnar-turkuaz-installer-qa.yml
 # Amac: Ragnar Classic read-only preview icin TurkuazInstaller Community kullanarak Windows QA paketi uretmek
 # Modul - GitHub Actions Windows QA YAML
-# Version: 0.3.3-qa
+# Version: 0.4.0-qa
 # Aciklama: Preview-only Rust + Velopack + pinned TurkuazInstaller WinUI/CLI; ephemeral local trust, no release
 # Bagimli Oldugu Katman: Rust preview-only | TurkuazInstaller Community | Velopack
 
@@ -48,6 +48,20 @@ jobs:
           if ($actual.Length -ne 40) { throw 'SOURCE_SHA_INVALID' }
           if ($expected -and $actual -ne $expected) { throw 'SOURCE_SHA_MISMATCH' }
           Write-Host "PUBLIC_BEAM_SOURCE_PIN_OK sha=$actual"
+      - name: Generate canonical product and private client-profile identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force 'build/wizard' | Out-Null
+          $commit = (git -C beam rev-parse HEAD).Trim()
+          py -3 -B beam/tools/windows/ragnar-turkuaz-qa/generate_setup_identity.py --profile preview-qa --source-commit $commit --header build/wizard/setup_identity.h --report build/wizard/identity.json
+          if ($LASTEXITCODE -ne 0) { throw 'INSTALLER_IDENTITY_GENERATION_FAILED' }
+          $identity = Get-Content build/wizard/identity.json -Raw | ConvertFrom-Json
+          if ($identity.production_publish_allowed -or $identity.client_year -or $identity.profile_id -ne 'preview-qa') {
+            throw 'PREVIEW_IDENTITY_TRUST_BOUNDARY_FAILED'
+          }
+          Write-Host "TRO_QA_IDENTITY_OK profile=$($identity.profile_id) commit=$commit"
+
       - name: Checkout pinned Community installer source
         uses: actions/checkout@v4
         with:
@@ -156,7 +170,8 @@ jobs:
             $background.Dispose(); $lineBrush.Dispose(); $titleBrush.Dispose(); $mutedBrush.Dispose()
             $graphics.Dispose(); $bitmap.Dispose()
           }
-          & (Join-Path $toolDir 'vpk.exe') --legacyConsole true --yes true --skip-updates true pack --runtime win-x64 --packId levelupgt.ragnar-classic-preview --packTitle 'Ragnar Classic Visual Preview' --packVersion 0.1.0 --packDir build/preview-payload --mainExe RagnarClassicPreview.exe --outputDir build/velopack --delta none --skipVeloAppCheck true --icon $icon --splashImage $splash --shortcuts None
+          $identity = Get-Content build/wizard/identity.json -Raw | ConvertFrom-Json
+          & (Join-Path $toolDir 'vpk.exe') --legacyConsole true --yes true --skip-updates true pack --runtime win-x64 --packId $identity.velopack_pack_id --packTitle $identity.display_name --packVersion $identity.installer_version --packDir build/preview-payload --mainExe RagnarClassicPreview.exe --outputDir build/velopack --delta none --skipVeloAppCheck true --icon $icon --splashImage $splash --shortcuts None
           if ($LASTEXITCODE -ne 0) { throw 'VELOPACk_PACK_FAILED' }
           if (-not (Select-String -Path 'beam/.github/workflows/ragnar-turkuaz-installer-qa.yml' -Pattern '--shortcuts None' -SimpleMatch -Quiet)) {
             throw 'VELOPACK_SHORTCUTS_MUST_BE_USER_OPT_IN'
@@ -276,9 +291,11 @@ jobs:
           "@ | Set-Content -LiteralPath 'build/wizard/setup.rc' -Encoding utf8
           rc /nologo /fo build/wizard/setup.res build/wizard/setup.rc
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_RC_EMBED_FAILED' }
-          cl /nologo /std:c++17 /utf-8 /O2 /EHsc /MT /DUNICODE /D_UNICODE /I build/wizard $source $view build/wizard/setup.res /link /MANIFEST:NO /SUBSYSTEM:WINDOWS /OUT:dist/RagnarClassic-Turkuaz-Setup.exe
+          $identity = Get-Content build/wizard/identity.json -Raw | ConvertFrom-Json
+          $outputSetup = Join-Path 'dist' $identity.public_setup_name
+          cl /nologo /std:c++17 /utf-8 /O2 /EHsc /MT /DUNICODE /D_UNICODE /I build/wizard $source $view build/wizard/setup.res /link /MANIFEST:NO /SUBSYSTEM:WINDOWS /OUT:$outputSetup
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_NATIVE_WIZARD_BUILD_FAILED' }
-          $exe = (Resolve-Path 'dist/RagnarClassic-Turkuaz-Setup.exe').Path
+          $exe = (Resolve-Path $outputSetup).Path
           mt.exe -nologo "-inputresource:$exe;#1" -out:build/wizard/embedded.manifest
           if ($LASTEXITCODE -ne 0) { throw 'RAGNAR_EMBEDDED_MANIFEST_MISSING' }
           $embeddedManifest = Get-Content -LiteralPath 'build/wizard/embedded.manifest' -Raw
@@ -310,17 +327,22 @@ jobs:
           "EXE=$($single[0].Name)" | Set-Content 'dist/CHECKSUM.txt'
           "SHA256=$outSha" | Add-Content 'dist/CHECKSUM.txt'
           "COMMIT=$env:GITHUB_SHA" | Add-Content 'dist/CHECKSUM.txt'
+          "SOURCE_COMMIT=$($identity.source_commit)" | Add-Content 'dist/CHECKSUM.txt'
+          "PROFILE_ID=$($identity.profile_id)" | Add-Content 'dist/CHECKSUM.txt'
+          "INSTALLER_VERSION=$($identity.installer_version)" | Add-Content 'dist/CHECKSUM.txt'
           "PayloadSHA256=$sha" | Add-Content 'dist/CHECKSUM.txt'
           "TEST_ONLY=unsigned; no production release" | Add-Content 'dist/CHECKSUM.txt'
-          Write-Host "RAGNAR_TURKUAZ_COMPACT_WIZARD_OK bytes=$size sha256=$outSha backend=Velopack_verified_by_Turkuaz_QA"
+          Copy-Item build/wizard/identity.json dist/client-identity.json
+          Write-Host "RAGNAR_TURKUAZ_COMPACT_WIZARD_OK bytes=$size sha256=$outSha profile=$($identity.profile_id) backend=Velopack_verified_by_Turkuaz_QA"
 
       - name: Upload only user-facing installer EXE
         uses: actions/upload-artifact@v4
         with:
-          name: RagnarClassic-Turkuaz-Single-EXE-TEST-ONLY
+          name: Turkuaz-Ragnarok-Online-preview-qa-${{ github.sha }}-TEST-ONLY
           path: |
-            dist/RagnarClassic-Turkuaz-Setup.exe
+            dist/Turkuaz-Ragnarok-Online-Setup.exe
             dist/CHECKSUM.txt
+            dist/client-identity.json
           if-no-files-found: error
           retention-days: 3
           compression-level: 0
