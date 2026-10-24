@@ -1,7 +1,7 @@
 // Dosya Yolu: tools/windows/ragnar-turkuaz-qa/RagnarSetupWindow.cpp
 // Amac: Adobe tarzi tek ekran Ragnar kurulum akisini tasiyan native View
 // Modul - Win32 Windows UI C++
-// Version: 0.4.0-qa
+// Version: 0.5.0-qa
 // Aciklama: Splash is first; options and progress stay in one window; no extra dialogs
 // Bagimli Oldugu Katman: RagnarSetupWizard.cpp adapter | Windows UI / GDI
 
@@ -11,6 +11,7 @@
 #include <shlobj.h>
 #include <wingdi.h>
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <string>
 #include <thread>
@@ -51,8 +52,12 @@ struct State {
     HFONT heading = nullptr, body = nullptr, smallFont = nullptr;
     HBRUSH formBackground = nullptr;
     ULONG_PTR gdiplusToken = 0;
-    IStream* artStream = nullptr;
-    Gdiplus::Bitmap* artBitmap = nullptr;
+    struct Artwork {
+        IStream* stream = nullptr;
+        Gdiplus::Bitmap* bitmap = nullptr;
+    };
+    std::array<Artwork, 3> backgrounds{};
+    int artworkCount = 0;
     Page page = Page::Welcome;
     int pulse = 0;
     std::wstring destination, error;
@@ -93,45 +98,89 @@ void Solid(HDC dc, RECT rect, COLORREF color) {
     FillRect(dc, &rect, brush);
     DeleteObject(brush);
 }
-// Optional, SHA-pinned image resource (ID 102). Fallback paint stays functional.
-void LoadConceptBackground() {
-    Gdiplus::GdiplusStartupInput input{};
-    if (Gdiplus::GdiplusStartup(&state.gdiplusToken, &input, nullptr) != Gdiplus::Ok)
-        return;
-    HRSRC resource = FindResourceW(nullptr, MAKEINTRESOURCEW(102), RT_RCDATA);
-    if (!resource) return;
+// Approved, local, hash-pinned resources: Concept C, sunrise and twilight.
+// Resource IDs match CI: 102 (Concept C), 103 (sunrise), 104 (twilight).
+constexpr int kArtworkIds[] = {102, 103, 104};
+bool LoadArtwork(int resourceId, State::Artwork& result) {
+    HRSRC resource = FindResourceW(nullptr, MAKEINTRESOURCEW(resourceId), RT_RCDATA);
+    if (!resource) return false;
     HGLOBAL data = LoadResource(nullptr, resource);
     const DWORD count = data ? SizeofResource(nullptr, resource) : 0;
-    const void* src = data ? LockResource(data) : nullptr;
-    if (!src || count < 1024 || count > 16 * 1024 * 1024) return;
+    const void* source = data ? LockResource(data) : nullptr;
+    if (!source || count < 1024 || count > 16 * 1024 * 1024) return false;
     HGLOBAL allocated = GlobalAlloc(GMEM_MOVEABLE, count);
-    if (!allocated) return;
-    void* writable = GlobalLock(allocated);
-    if (!writable) { GlobalFree(allocated); return; }
-    std::memcpy(writable, src, count);
-    GlobalUnlock(allocated);
-    if (FAILED(CreateStreamOnHGlobal(allocated, TRUE, &state.artStream))) {
+    if (!allocated) return false;
+    void* memory = GlobalLock(allocated);
+    if (!memory) {
         GlobalFree(allocated);
-        return;
+        return false;
     }
-    state.artBitmap = Gdiplus::Bitmap::FromStream(state.artStream);
-    if (!state.artBitmap || state.artBitmap->GetLastStatus() != Gdiplus::Ok) {
-        delete state.artBitmap;
-        state.artBitmap = nullptr;
-        state.artStream->Release();
-        state.artStream = nullptr;
+    std::memcpy(memory, source, count);
+    GlobalUnlock(allocated);
+    if (FAILED(CreateStreamOnHGlobal(allocated, TRUE, &result.stream))) {
+        GlobalFree(allocated);
+        return false;
     }
+    result.bitmap = Gdiplus::Bitmap::FromStream(result.stream);
+    if (!result.bitmap || result.bitmap->GetLastStatus() != Gdiplus::Ok) {
+        delete result.bitmap;
+        result.bitmap = nullptr;
+        result.stream->Release();
+        result.stream = nullptr;
+        return false;
+    }
+    return true;
+}
+bool LoadConceptBackgrounds() {
+    Gdiplus::GdiplusStartupInput input{};
+    if (Gdiplus::GdiplusStartup(&state.gdiplusToken, &input, nullptr) != Gdiplus::Ok)
+        return false;
+    int found = 0;
+    for (size_t i = 0; i < state.backgrounds.size(); ++i) {
+        if (FindResourceW(nullptr, MAKEINTRESOURCEW(kArtworkIds[i]), RT_RCDATA))
+            ++found;
+    }
+    // A partial artwork set must never silently disguise missing release assets.
+    if (found == 0) return true; // legacy gradient-only QA remains testable
+    if (found != static_cast<int>(state.backgrounds.size())) return false;
+    for (size_t i = 0; i < state.backgrounds.size(); ++i) {
+        if (!LoadArtwork(kArtworkIds[i], state.backgrounds[i])) return false;
+        ++state.artworkCount;
+    }
+    return true;
+}
+Gdiplus::Bitmap* ArtworkForPage(Page page) {
+    if (state.artworkCount != static_cast<int>(state.backgrounds.size())) return nullptr;
+    size_t index = 0; // Welcome uses the approved original Concept C image.
+    switch (page) {
+        case Page::Options: index = 1; break;      // daylight alternative
+        case Page::Installing: index = 2; break;   // night alternative
+        case Page::Complete: index = 1; break;
+        case Page::Failed: index = 2; break;
+        default: break;
+    }
+    return state.backgrounds[index].bitmap;
 }
 void PaintConceptBackground(HDC dc) {
-    if (!state.artBitmap) return;
+    auto* bitmap = ArtworkForPage(state.page);
+    if (!bitmap) return;
     RECT client{};
     GetClientRect(state.hwnd, &client);
     const int width = client.right, height = client.bottom;
     if (width <= 0 || height <= 0) return;
     Gdiplus::Graphics graphics(dc);
-    graphics.DrawImage(state.artBitmap, Gdiplus::Rect(0, 0, width, height));
-    // Readability on the light fantasy landscape; no fake progress overlay.
-    Gdiplus::SolidBrush shade(Gdiplus::Color(148, 7, 20, 41));
+    graphics.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+    // Crop-to-fill for 810x640 rather than distort the widescreen illustration.
+    const double scale = std::max(
+        static_cast<double>(width) / bitmap->GetWidth(),
+        static_cast<double>(height) / bitmap->GetHeight());
+    const int srcW = static_cast<int>(width / scale);
+    const int srcH = static_cast<int>(height / scale);
+    const int srcX = (static_cast<int>(bitmap->GetWidth()) - srcW) / 2;
+    const int srcY = (static_cast<int>(bitmap->GetHeight()) - srcH) / 2;
+    graphics.DrawImage(bitmap, Gdiplus::Rect(0, 0, width, height),
+                       srcX, srcY, srcW, srcH, Gdiplus::UnitPixel);
+    Gdiplus::SolidBrush shade(Gdiplus::Color(155, 7, 20, 41));
     graphics.FillRectangle(&shade, Gdiplus::Rect(0, 0, width, height));
 }
 void Paint(HDC dc) {
@@ -292,7 +341,7 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
       case WM_CREATE: {
         state.hwnd = window;
-        LoadConceptBackground();
+        if (!LoadConceptBackgrounds()) return -1;
         state.heading = CreateFontW(-37,0,0,0,FW_BOLD,FALSE,FALSE,FALSE,
                                     DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
         state.body = CreateFontW(-24,0,0,0,FW_SEMIBOLD,FALSE,FALSE,FALSE,
@@ -391,8 +440,10 @@ LRESULT CALLBACK Proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
         KillTimer(window,kPulse);
         for (HFONT font : {state.heading,state.body,state.smallFont}) if (font) DeleteObject(font);
         if (state.formBackground) DeleteObject(state.formBackground);
-        delete state.artBitmap;
-        if (state.artStream) state.artStream->Release();
+        for (auto& artwork : state.backgrounds) {
+            delete artwork.bitmap;
+            if (artwork.stream) artwork.stream->Release();
+        }
         if (state.gdiplusToken) Gdiplus::GdiplusShutdown(state.gdiplusToken);
         PostQuitMessage(0);
         return 0;
@@ -436,6 +487,15 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,LPWSTR arguments,int) {
         if (success) DestroyWindow(state.hwnd);
         CoUninitialize();
         return success?0:4;
+    }
+    if (arguments && wcscmp(arguments,L"--verify-artwork-present")==0) {
+        HRESULT init = CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
+        if (FAILED(init)) return 4;
+        bool success = SetupWindow(instance,false) &&
+                       state.artworkCount == 3;
+        if (state.hwnd) DestroyWindow(state.hwnd);
+        CoUninitialize();
+        return success ? 0 : 4;
     }
     if (arguments && wcscmp(arguments,L"--verify-dialog-runtime")==0)
         return RagnarDialogAvailable()?0:4;
