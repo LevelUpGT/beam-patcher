@@ -1159,6 +1159,16 @@
         .theme-settings-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
         .theme-settings-status { font-size: 12px; color: #9ce4dc; min-height: 18px; margin-top: 10px; }
         .theme-settings-close { flex-shrink: 0; }
+
+        /* Image loading is fail-closed: never display broken-image icons. */
+        .grid-image-item.is-image-missing { position: relative; }
+        .grid-image-item.is-image-missing::before {
+            content: 'LEVELUP GAMES';
+            position: absolute; z-index: 1; left: 10px; top: 10px;
+            color: #dcecff; font-size: 11px; font-weight: 800;
+            letter-spacing: 1px; text-shadow: 0 2px 8px #09152c;
+        }
+        .grid-image-item.is-image-missing img { display: none !important; }
     </style>
     <!-- Explicit opt-in only: preserves the existing Beam appearance by default. -->
     <link id="ragnar-legacy-theme-css" rel="stylesheet" href="assets/ragnar-legacy.css" disabled>
@@ -1944,58 +1954,56 @@
             }
         }
 
+        // PACKAGED ASSET CONTRACT: Tauri embeds public/assets in the frontend.
+        // Do not try to resolve these URLs as loose files next to an Inno EXE.
+        const builtInGridImages = Object.freeze([
+            'assets/1.png', 'assets/2.png', 'assets/3.png', 'assets/4.png'
+        ]);
+
         async function loadImageGrid(config) {
-            // Do not fetch default third-party placeholder art during offline QA,
-            // or when LevelUp Modern has no explicitly approved artwork.
-            if (isThemePreview || (activeLauncherTheme === 'levelup-modern' &&
-                !(config.app && config.app.grid_images && config.app.grid_images.length))) {
-                for (const img of document.querySelectorAll('#image-grid img')) {
-                    img.removeAttribute('src');
-                    img.onerror = null;
-                }
-                return;
-            }
-            // Default placeholder images
-            const defaultImages = [
-                'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&h=400&fit=crop',
-                'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?w=400&h=400&fit=crop',
-                'https://images.unsplash.com/photo-1542751371-adc38448a05e?w=400&h=400&fit=crop',
-                'https://images.unsplash.com/photo-1614732414444-096e5f1122d5?w=400&h=400&fit=crop'
-            ];
-            
-            console.log('Config:', config);
-            console.log('Grid images from config:', config.app?.grid_images);
-            
-            // Get images from config or use defaults
-            const imageUrls = (config.app && config.app.grid_images) ? config.app.grid_images : defaultImages;
-            console.log('Using images:', imageUrls);
-            
-            // Set images to grid items
+            const provided = Array.isArray(config?.app?.grid_images)
+                ? config.app.grid_images : [];
+
             for (let i = 1; i <= 4; i++) {
                 const img = document.getElementById(`grid-img-${i}`);
-                if (img) {
-                    const imagePath = imageUrls[i - 1] || defaultImages[i - 1];
-                    
-                    // Check if URL or local path
-                    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-                        // Direct URL
-                        img.src = imagePath;
-                    } else if (isTauri) {
-                        // Local asset path - resolve it
-                        try {
-                            const resolvedPath = await invoke('resolve_resource_path', { path: imagePath });
-                            img.src = window.__TAURI__.tauri.convertFileSrc(resolvedPath);
-                        } catch (err) {
-                            console.error(`Failed to load image ${i}:`, err);
-                            img.src = defaultImages[i - 1];
-                        }
-                    } else {
-                        img.src = imagePath;
+                if (!img) continue;
+                const tile = img.closest('.grid-image-item');
+                const fallback = builtInGridImages[i - 1];
+                const supplied = provided[i - 1];
+                const imagePath = typeof supplied === 'string' && supplied.trim()
+                    ? supplied.trim() : fallback;
+
+                img.onload = () => {
+                    img.style.display = 'block';
+                    tile?.classList.remove('is-image-missing');
+                };
+                img.onerror = () => {
+                    // A failed image must never loop through external placeholders.
+                    img.onerror = null;
+                    img.removeAttribute('src');
+                    img.style.display = 'none';
+                    tile?.classList.add('is-image-missing');
+                    console.warn(`Launcher tile ${i} failed to load.`);
+                };
+
+                if (isThemePreview && /^https?:\/\//i.test(imagePath)) {
+                    img.src = fallback;
+                } else if (/^https?:\/\//i.test(imagePath)) {
+                    // External artwork is opt-in only via an explicit config URL.
+                    img.src = imagePath;
+                } else if (/^assets\/[a-zA-Z0-9_.-]+\.(?:png|jpe?g|webp|gif)$/i.test(imagePath)) {
+                    // Always load trusted bundled images through the page origin:
+                    // tauri://localhost/assets/N.png (or localhost browser QA).
+                    img.src = new URL(imagePath, document.baseURI).href;
+                } else if (isTauri && !isOfflineQa && !isThemePreview) {
+                    try {
+                        const absolutePath = await invoke('resolve_resource_path', { path: imagePath });
+                        img.src = window.__TAURI__.tauri.convertFileSrc(absolutePath);
+                    } catch (error) {
+                        img.src = fallback;
                     }
-                    
-                    img.onerror = function() {
-                        this.src = `https://via.placeholder.com/400x400/1a1f2e/6366f1?text=Image+${i}`;
-                    };
+                } else {
+                    img.src = fallback;
                 }
             }
         }
