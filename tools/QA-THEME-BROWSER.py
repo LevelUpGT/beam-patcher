@@ -63,7 +63,8 @@ MOCK_TAURI = r"""
             throw new Error("OFFLINE_QA_NO_PATCH_ACCESS");
           case "open_setup": return null;
           case "resolve_resource_path":
-            if (!/^assets\\/[1-4]\\.png$/.test(args?.path)) {
+            if (!["assets/1.png", "assets/2.png", "assets/3.png", "assets/4.png"]
+                .includes(args?.path)) {
               throw new Error("OFFLINE_QA_ASSET_DENIED");
             }
             return args.path;
