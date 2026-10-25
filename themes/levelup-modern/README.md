@@ -2,7 +2,7 @@
 Dosya Yolu: themes/levelup-modern/README.md
 Amac: LevelUp Modern Beam temasi gorunumu, secim akisi ve guvenli QA sinirlari
 Modul - Markdown Theme Documentation
-Version: 0.2.0-candidate
+Version: 0.2.1-candidate
 Aciklama: Bagimsiz secilebilir gorunume dair kaynak ve browser kontrol rehberi
 Bagimli Oldugu Katman: beam-ui/public/index.html | assets/levelup-modern.css
 -->
@@ -62,7 +62,7 @@ short-lived PNG screenshots plus a SHA-256 evidence report.
 
 ```powershell
 python -m pip install playwright==1.56.0
-python -m playwright install chromium
+# Use an installed Chrome/Chromium browser
 python tools/QA-THEME-BROWSER.py --output-dir build/theme-visual-qa
 ```
 
