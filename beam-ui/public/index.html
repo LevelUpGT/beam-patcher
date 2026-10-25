@@ -1079,6 +1079,10 @@
             }
         }
 
+        /* Theme-only DOM must never leak into Beam's default or other themes.
+           Scoped theme CSS loaded after this base rule enables each region. */
+        .modern-nav, .modern-hero, .classic-ad-rail { display: none; }
+
         /* Visual settings only: no update-feed or executable controls. */
         .theme-settings[hidden] { display: none !important; }
         .theme-settings {
