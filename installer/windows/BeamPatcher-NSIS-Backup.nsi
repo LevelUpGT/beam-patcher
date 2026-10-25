@@ -16,7 +16,7 @@ SetCompressor /SOLID lzma
 !endif
 
 Name "LevelUp Games Beam QA - NSIS BACKUP ONLY"
-OutFile "\${NsisOut}\LevelUpGames-Beam-NSIS-BACKUP-QA-Setup.exe"
+OutFile "${NsisOut}\LevelUpGames-Beam-NSIS-BACKUP-QA-Setup.exe"
 InstallDir "$LOCALAPPDATA\Programs\LevelUpGT\Beam Patcher QA-NSIS-Backup"
 ShowInstDetails show
 ShowUninstDetails show
@@ -30,7 +30,7 @@ Section "Install NSIS backup QA" SecInstall
   SetShellVarContext current
   SetOutPath "$INSTDIR"
   SetOverwrite on
-  File "/oname=beam-patcher.exe" "\${BeamExe}"
+  File "/oname=beam-patcher.exe" "${BeamExe}"
   File "/oname=README-QA.txt" "installer\windows\README-QA.txt"
   SetOverwrite off
   File "/oname=config.yml" "installer\windows\config.qa.yml"
