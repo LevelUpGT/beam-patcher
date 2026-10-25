@@ -1,7 +1,7 @@
 # Dosya Yolu: .github/workflows/ragnar-legacy-theme-qa.yml
 # Amac: Ragnar classic Beam theme CSS/config/JS contract QA
 # Modul - GitHub Actions YAML
-# Version: 0.2.0-candidate
+# Version: 0.3.0-candidate
 # Aciklama: Offline source check only, no game files/patcher binary/release.
 # Bagimli Oldugu Katman: tools/tests/test_ragnar_legacy_theme.py | beam-ui/public/index.html
 name: Ragnar Legacy and Classic Themes Offline QA
@@ -19,6 +19,7 @@ on:
       - "themes/README.md"
       - "tools/tests/test_ragnar_classic_theme.py"
       - "tools/tests/test_levelup_modern_theme.py"
+      - "tools/QA-THEME-BROWSER.py"
       - "themes/ragnar-legacy/**"
       - "tools/tests/test_ragnar_legacy_theme.py"
       - ".github/workflows/ragnar-legacy-theme-qa.yml"
@@ -33,6 +34,7 @@ on:
       - "themes/README.md"
       - "tools/tests/test_ragnar_classic_theme.py"
       - "tools/tests/test_levelup_modern_theme.py"
+      - "tools/QA-THEME-BROWSER.py"
       - "themes/ragnar-legacy/**"
       - "tools/tests/test_ragnar_legacy_theme.py"
       - ".github/workflows/ragnar-legacy-theme-qa.yml"
@@ -67,3 +69,34 @@ jobs:
           Path("/tmp/ragnar-beam-ui-inline.js").write_text(scripts[0], encoding="utf-8")
           PY
           node --check /tmp/ragnar-beam-ui-inline.js
+
+  # Browser rendering evidence; this is not the native Tauri/WebView2 smoke test.
+  chromium-theme-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout branch without credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python for deterministic browser QA
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned Playwright and Chromium
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir playwright==1.56.0
+          python -m playwright install --with-deps chromium
+      - name: Render all four themes and verify restart persistence (offline mocked Tauri)
+        run: |
+          python tools/QA-THEME-BROWSER.py --output-dir build/theme-visual-qa --source-sha "${{ github.sha }}"
+      - name: Upload short-lived screenshot proof (not a release)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: beam-themes-chromium-qa-${{ github.sha }}
+          path: build/theme-visual-qa
+          retention-days: 7
+          if-no-files-found: error
