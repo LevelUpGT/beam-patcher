@@ -52,6 +52,9 @@ pub struct PatcherConfig {
     pub target_grf: String,
     pub allow_manual_patch: bool,
     pub verify_checksums: bool,
+    /// Explicit offline-only QA policy. Absent in existing deployments.
+    #[serde(default)]
+    pub qa_only: bool,
     /// Optional deployment-enforced per-region identity and patch SHA256 policy.
     /// Existing generic Beam installs stay unchanged when omitted.
     #[serde(default)]
@@ -179,6 +182,7 @@ impl Config {
             return Err(Error::InvalidConfig("Target GRF cannot be empty".to_string()));
         }
         
+        crate::qa_guard::validate_qa_config(self)?;
         Ok(())
     }
     
@@ -218,6 +222,7 @@ impl Config {
                 target_grf: "data.grf".to_string(),
                 allow_manual_patch: true,
                 verify_checksums: true,
+                qa_only: false,
                 compatibility_guard: None,
             },
             ui: UiConfig {
