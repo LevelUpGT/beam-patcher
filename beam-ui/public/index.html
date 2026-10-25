@@ -1742,11 +1742,29 @@
             modal.classList.remove('active');
         }
 
-        // Close modal on ESC key
+        // Modal keyboard access: Escape closes; Tab never escapes open settings.
         document.addEventListener('keydown', (e) => {
+            const dialog = document.getElementById('theme-settings-modal');
             if (e.key === 'Escape') {
                 closeImageModal();
-                if (!document.getElementById('theme-settings-modal').hidden) closeThemeSettings();
+                if (!dialog.hidden) {
+                    e.preventDefault();
+                    closeThemeSettings();
+                }
+            }
+            if (e.key !== 'Tab' || dialog.hidden) return;
+            const focusables = Array.from(dialog.querySelectorAll(
+                'button:not([disabled]), select:not([disabled])'
+            ));
+            if (focusables.length === 0) return;
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
             }
         });
 
