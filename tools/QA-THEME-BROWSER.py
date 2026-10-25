@@ -258,7 +258,7 @@ def run(output_dir, source_sha):
         # folder, and does not share theme preferences with the primary run.
         qa_context = browser.new_context(viewport={"width": 900, "height": 620})
         qa_mock = MOCK_TAURI.replace(
-            "    ui: {", "    patcher: {qa_only: true},\\n    ui: {", 1
+            "    ui: {", "    patcher: {qa_only: true}," + chr(10) + "    ui: {", 1
         )
         qa_context.add_init_script(qa_mock)
         qa_page = qa_context.new_page()
@@ -267,6 +267,7 @@ def run(output_dir, source_sha):
         qa_page.wait_for_function("document.getElementById('play-button')?.textContent === 'QA / Oyun Kapalı'",
                                   timeout=15000)
         require(qa_page.locator("#play-button").is_disabled(), "QA Play action should be disabled")
+        qa_page.locator("#theme-settings-open").click()
         require(qa_page.locator("#qa-workspace-select").is_visible(),
                 "QA folder selection must be accessible from Settings")
         require(qa_page.locator("#theme-game-setup").is_disabled(),
