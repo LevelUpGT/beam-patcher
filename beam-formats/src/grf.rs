@@ -59,6 +59,18 @@ impl Grf {
         })
     }
     
+    /// Stage a new GRF without creating the destination file. A failed patch
+    /// download or checksum must not leave behind a header-only GRF.
+    pub fn staging_new<P: AsRef<Path>>(path: P) -> Self {
+        Grf {
+            version: GRF_VERSION_0X200,
+            entries: HashMap::new(),
+            file_path: path.as_ref().to_path_buf(),
+            pending_patches: HashMap::new(),
+            pending_removals: std::collections::HashSet::new(),
+        }
+    }
+
     pub fn version_name(version: u32) -> &'static str {
         match version {
             GRF_VERSION_0X101 => "0x101 (Legacy)",
@@ -726,6 +738,18 @@ mod tests {
         let _ = std::fs::remove_file(&backup);
         let _ = std::fs::remove_file(&path);
         result.unwrap();
+    }
+
+    #[test]
+    fn staging_new_does_not_create_grf_until_saved() {
+        let path = tmp_grf("staging_fails_closed");
+        assert!(!path.exists());
+        let mut grf = Grf::staging_new(&path);
+        assert!(!path.exists());
+        grf.patch_file("data/qa.txt", b"test").unwrap();
+        grf.save().unwrap();
+        assert_eq!(Grf::open(&path).unwrap().extract_file("data/qa.txt").unwrap(), b"test");
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
