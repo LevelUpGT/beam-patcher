@@ -2,17 +2,21 @@
 # Dosya Yolu: tools/QA-THEME-BROWSER.py
 # Amac: Dort Beam tema gorunumunu gercek Chromium uzerinde offline smoke ile dogrular
 # Modul - Python / Playwright / Visual QA
-# Version: 0.1.1-candidate
+# Version: 0.2.0-candidate
 # Aciklama: Yerel dosyalardan render; Tauri komutlari salt okunur test doubles; oyun/patch yok
 # Bagimli Oldugu Katman: beam-ui/public/index.html | assets/*.css | browser QA
 
 """Offline Chromium UI smoke and screenshot artifacts. Not a Tauri or gameplay test."""
 
 import argparse
+from contextlib import contextmanager
+import functools
 import hashlib
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import sys
+from threading import Thread
 
 THEMES = ("default", "ragnar-legacy", "ragnar-classic", "levelup-modern")
 PREFERENCE = "beam.launcher.theme.v1"
@@ -94,6 +98,21 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+@contextmanager
+def local_preview_server():
+    # Bind only localhost; browser test never serves client files on a LAN.
+    handler = functools.partial(SimpleHTTPRequestHandler, directory=str(HTML.parent))
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}/index.html"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 def run(output_dir, source_sha):
     if not HTML.is_file():
         raise RuntimeError("Beam HTML is missing")
@@ -107,7 +126,7 @@ def run(output_dir, source_sha):
         raise RuntimeError("Playwright is not installed; see theme QA docs") from exc
 
     artifacts = []
-    with sync_playwright() as pw:
+    with local_preview_server() as preview_url, sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 900, "height": 620}, device_scale_factor=1)
         context.add_init_script(MOCK_TAURI)
@@ -116,7 +135,10 @@ def run(output_dir, source_sha):
 
         def route(request_route):
             url = request_route.request.url
-            if url.startswith("http://") or url.startswith("https://"):
+            # Same-origin localhost fixture is allowed; ALL external URLs are blocked.
+            if (url.startswith("http://") or url.startswith("https://")) and not url.startswith(
+                preview_url.rsplit("/", 1)[0] + "/"
+            ):
                 blocked.append(url.split("?", 1)[0])
                 request_route.abort()
             else:
@@ -125,7 +147,7 @@ def run(output_dir, source_sha):
         page_errors = []
         page.on("pageerror", lambda err: page_errors.append(str(err)))
         page.route("**/*", route)
-        page.goto(HTML.resolve().as_uri(), wait_until="domcontentloaded", timeout=30000)
+        page.goto(preview_url, wait_until="domcontentloaded", timeout=30000)
         try:
             page.wait_for_function("document.body.classList.contains('theme-ragnar-legacy')",
                                    timeout=8000)
