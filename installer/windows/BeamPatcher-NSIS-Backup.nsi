@@ -31,9 +31,9 @@ Section "Install NSIS backup QA" SecInstall
   SetOutPath "$INSTDIR"
   SetOverwrite on
   File "/oname=beam-patcher.exe" "${BeamExe}"
-  File "/oname=README-QA.txt" "installer\windows\README-QA.txt"
+  File "/oname=README-QA.txt" "${__FILEDIR__}\README-QA.txt"
   SetOverwrite off
-  File "/oname=config.yml" "installer\windows\config.qa.yml"
+  File "/oname=config.yml" "${__FILEDIR__}\config.qa.yml"
   SetOverwrite on
 
   WriteUninstaller "$INSTDIR\Uninstall-NSIS-Backup.exe"
