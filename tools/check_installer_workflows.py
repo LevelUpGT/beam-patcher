@@ -18,6 +18,7 @@ REQUIRED = (
     "installer/windows/BeamPatcher-NSIS-Backup.nsi",
     "tools/verify_installer_pair.py",
     "tools/check_installer_workflows.py",
+    "tools/Confirm-TurkuazTrust.ps1",
     "docs/INSTALLER-STRATEGY-TURKUAZ.md",
 )
 
@@ -36,7 +37,8 @@ def policy_errors(root: Path) -> list[str]:
         raw = path.read_text(encoding="utf-8-sig")
         if path.name == RELEASE_WORKFLOW:
             for token in ("TurkuazInstaller", "NSIS", "verify_installer_pair.py",
-                          "windows-latest", "actions/upload-artifact"):
+                          "windows-latest", "actions/upload-artifact",
+                          "Confirm-TurkuazTrust.ps1"):
                 if token not in raw:
                     errors.append(f"{path.name}: missing {token}")
             continue
