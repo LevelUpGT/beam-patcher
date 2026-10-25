@@ -1,7 +1,7 @@
 # Dosya Yolu: installer/windows/config.qa.yml
 # Amac: Standalone Beam QA kurulumunun varsayilan kapali ve test odakli profili
 # Modul - YAML deployment profile
-# Version: 0.1.0-candidate
+# Version: 0.2.0-candidate
 # Aciklama: Varsayilan uzak patch yayini yok; QA GRF ayridir; manuel test bilincli secilir
 # Bagimli Oldugu Katman: beam-core/src/config.rs | installer/windows/BeamPatcher-QA.iss
 app:
@@ -31,6 +31,7 @@ patcher:
   target_grf: "levelup-qa.grf"
   allow_manual_patch: true
   verify_checksums: true
+  qa_only: true
   compatibility_guard: null
 
 ui:
