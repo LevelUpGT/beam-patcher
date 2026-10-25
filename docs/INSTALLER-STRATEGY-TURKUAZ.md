@@ -2,12 +2,36 @@
 Dosya Yolu: docs/INSTALLER-STRATEGY-TURKUAZ.md
 Amac: Beam QA paketlemesinden TurkuazInstaller'a guvenli gecis plani ve kabul sinirlari
 Modul - Markdown documentation
-Version: 0.1.0-candidate
+Version: 0.2.0-candidate
 Aciklama: Inno Setup gecici QA artifact olarak kalir; imzali Turkuaz manifest ve Velopack E2E tamamlaninca gecis yapilir
 Bagimli Oldugu Katman: installer/windows/BeamPatcher-QA.iss | TurkuazLabs/TurkuazInstaller/docs/PROJECT_INTEGRATION.md
 -->
 
-# Beam installer: Inno QA today, TurkuazInstaller target
+# Beam installer: BURAK-INS-001, Turkuaz primary + NSIS private backup
+
+## Binding distribution policy — 2026-10-25
+
+**Never share Inno or NSIS as the user-facing setup.** One Windows
+CI orchestrator builds the actual TurkuazInstaller Community bootstrapper
+with the Beam Velopack package, plus an NSIS backup from the exact same
+commit/version. The NSIS fallback is private; the user-facing download
+is always the verified Turkuaz primary. Missing signer, detached CMS
+`.p7s`, independently pinned trust, product E2E or NSIS smoke is a
+fatal distribution blocker. A failed Turkuaz build does NOT promote NSIS.
+
+The previous Inno installer is retired from automatic artifact upload
+but retained as non-published historical QA source until migration
+testing is complete. The `windows-setup-patch-qa.yml` job now performs
+private NSIS smoke ONLY. The manual
+`.github/workflows/dual-installer-policy.yml` is the sole
+user-facing distribution path. Until its signed-metadata gate passes,
+**no new setup may be provided**. The earlier distributed QA executable
+is not a TurkuazInstaller package.
+
+This is a staged migration: **policy and build orchestration implemented;
+production signing, real Turkuaz product E2E and shareable primary
+NOT COMPLETE**.
+
 
 ## Why Inno was used
 
@@ -26,6 +50,22 @@ https://github.com/TurkuazLabs/TurkuazInstaller/blob/main/docs/PROJECT_INTEGRATI
 The upstream Windows Desktop, Velopack E2E and local unsigned test
 packaging checks are passing. But their unsigned local test ZIP cannot be
 redistributed as a signed product installer.
+
+## Current tools and acceptance gates
+
+- Main Beam patch motor: Rust/Windows x64, independent of setup system.
+- New policy/negative tests: `tools/check_installer_workflows.py`,
+  `tools/tests/test_installer_distribution_policy.py`.
+- Build/pair gate: `tools/verify_installer_pair.py` checks exact source
+  SHA, version, primary/fallback role, supplied E2E results and independent
+  checksums; this is *not a standalone signature verifier*.
+- The Windows workflow checks genuine Turkuaz Authenticode, but a
+  signing-protected E2E bundle and real detached CMS/trust verifier remain
+  REQUIRED. No unsigned development build is end-user shareable.
+- NSIS source: `installer/windows/BeamPatcher-NSIS-Backup.nsi`.
+  It installs only QA launcher/config and preserves the user's config.
+- Pinned upstream Turkuaz source commit:
+  `1048931bf7498ab4d4440414c4463e6ee5e7421e` (Community).
 
 ## Required work before switching Beam installers
 
