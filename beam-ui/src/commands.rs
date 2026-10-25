@@ -154,6 +154,9 @@ pub async fn launch_game(
     _token: String,
 ) -> Result<(), String> {
     let config = state.config.lock().unwrap().clone();
+    if config.patcher.qa_only {
+        return Err("QA mode cannot launch a game executable".to_string());
+    }
     
     let exe_dir = std::env::current_exe()
         .map_err(|e| format!("Failed to get executable path: {}", e))?
@@ -334,6 +337,9 @@ pub async fn apply_game_settings(
     settings: GameSettings,
 ) -> Result<(), String> {
     let config = state.config.lock().unwrap();
+    if config.patcher.qa_only {
+        return Err("QA mode cannot write game settings".to_string());
+    }
     
     let game_dir = config.app.game_directory.as_ref()
         .ok_or("Game directory not set")?;
@@ -379,6 +385,9 @@ pub fn resolve_resource_path(app: AppHandle, path: String) -> Result<String, Str
 #[tauri::command]
 pub async fn open_setup(state: State<'_, AppState>) -> Result<(), String> {
     let config = state.config.lock().unwrap().clone();
+    if config.patcher.qa_only {
+        return Err("QA mode cannot launch native game setup".to_string());
+    }
     
     let setup_exe_name = config.app.setup_exe
         .ok_or("Setup executable not configured")?;
