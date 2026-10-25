@@ -2,7 +2,7 @@
 # Dosya Yolu: tools/QA-THEME-BROWSER.py
 # Amac: Dort Beam tema gorunumunu gercek Chromium uzerinde offline smoke ile dogrular
 # Modul - Python / Playwright / Visual QA
-# Version: 0.2.0-candidate
+# Version: 0.2.1-candidate
 # Aciklama: Yerel dosyalardan render; Tauri komutlari salt okunur test doubles; oyun/patch yok
 # Bagimli Oldugu Katman: beam-ui/public/index.html | assets/*.css | browser QA
 
@@ -14,6 +14,7 @@ import functools
 import hashlib
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import shutil
 from pathlib import Path
 import sys
 from threading import Thread
@@ -127,7 +128,12 @@ def run(output_dir, source_sha):
 
     artifacts = []
     with local_preview_server() as preview_url, sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=True)
+        system_browser = next((shutil.which(name) for name in (
+            "google-chrome", "chromium", "chromium-browser"
+        ) if shutil.which(name)), None)
+        if not system_browser:
+            raise RuntimeError("SYSTEM_CHROME_REQUIRED: install Chrome/Chromium for browser QA")
+        browser = pw.chromium.launch(headless=True, executable_path=system_browser)
         context = browser.new_context(viewport={"width": 900, "height": 620}, device_scale_factor=1)
         context.add_init_script(MOCK_TAURI)
         page = context.new_page()
