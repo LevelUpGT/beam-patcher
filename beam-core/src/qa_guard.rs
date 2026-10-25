@@ -9,6 +9,7 @@ use crate::{Config, Error, Result};
 use std::fs;
 use std::path::Path;
 
+pub(crate) const QA_APP_NAME: &str = "LevelUp Games Beam QA";
 const QA_GRF: &str = "levelup-qa.grf";
 
 fn qa_reject(reason: impl AsRef<str>) -> Error {
