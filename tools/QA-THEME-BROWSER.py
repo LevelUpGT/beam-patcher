@@ -32,7 +32,7 @@ MOCK_TAURI = r"""
       bgm_autoplay: false,
       video_background_enabled: false,
       limited_items: [],
-      grid_images: [],
+      grid_images: ["assets/1.png", "assets/2.png", "assets/3.png", "assets/4.png"],
       social_links: [],
       register_url: null
     },
@@ -43,7 +43,7 @@ MOCK_TAURI = r"""
   };
   window.__TAURI__ = {
     tauri: {
-      invoke: async (command) => {
+      invoke: async (command, args) => {
         calls.push(command);
         switch (command) {
           case "get_config": return config;
@@ -57,10 +57,15 @@ MOCK_TAURI = r"""
           case "check_patches_available":
             throw new Error("OFFLINE_QA_NO_PATCH_ACCESS");
           case "open_setup": return null;
+          case "resolve_resource_path":
+            if (!/^assets\\/[1-4]\\.png$/.test(args?.path)) {
+              throw new Error("OFFLINE_QA_ASSET_DENIED");
+            }
+            return args.path;
           default: throw new Error("OFFLINE_QA_COMMAND_BLOCKED:" + command);
         }
       },
-      convertFileSrc: () => { throw new Error("OFFLINE_QA_NO_FILE_RESOLVE"); }
+      convertFileSrc: (path) => new URL(path, window.location.href).href
     },
     window: {appWindow: {minimize: async () => {}, close: async () => {}}},
     event: {listen: async () => () => {}}
