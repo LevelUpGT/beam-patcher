@@ -279,19 +279,7 @@ pub async fn select_game_directory(state: State<'_, AppState>) -> Result<String,
         .ok_or("No directory selected")?;
     
     let directory_path = selected.to_string_lossy().to_string();
-    
-    let mut config = state.config.lock().unwrap();
-    config.app.game_directory = Some(directory_path.clone());
-    
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?
-        .parent()
-        .ok_or("Failed to get executable directory")?
-        .to_path_buf();
-    
-    let config_path = exe_dir.join("config.yml");
-    config.save(&config_path).map_err(|e| e.to_string())?;
-    
+    save_checked_game_directory(&state, directory_path.clone())?;
     Ok(directory_path)
 }
 
@@ -300,19 +288,23 @@ pub async fn set_game_directory(
     state: State<'_, AppState>,
     directory: String,
 ) -> Result<(), String> {
-    let mut config = state.config.lock().unwrap();
-    config.app.game_directory = Some(directory.clone());
-    
+    save_checked_game_directory(&state, directory)
+}
+
+// SAFETY: reject an occupied/linked QA workspace BEFORE modifying saved
+// or in-memory state; a cancelled directory picker leaves prior config intact.
+fn save_checked_game_directory(state: &State<'_, AppState>, directory: String) -> Result<(), String> {
+    let mut active = state.config.lock().map_err(|err| err.to_string())?;
+    let mut candidate = active.clone();
+    candidate.app.game_directory = Some(directory);
+    candidate.validate().map_err(|err| err.to_string())?;
     let exe_dir = std::env::current_exe()
-        .map_err(|e| format!("Failed to get executable path: {}", e))?
+        .map_err(|err| err.to_string())?
         .parent()
-        .ok_or("Failed to get executable directory")?
+        .ok_or("Could not find launcher installation directory")?
         .to_path_buf();
-    
-    let config_path = exe_dir.join("config.yml");
-    
-    config.save(&config_path).map_err(|e| e.to_string())?;
-    
+    candidate.save(exe_dir.join("config.yml")).map_err(|err| err.to_string())?;
+    *active = candidate;
     Ok(())
 }
 
