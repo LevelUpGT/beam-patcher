@@ -1,7 +1,7 @@
 # Dosya Yolu: .github/workflows/ragnar-legacy-theme-qa.yml
 # Amac: Ragnar classic Beam theme CSS/config/JS contract QA
 # Modul - GitHub Actions YAML
-# Version: 0.1.0-candidate
+# Version: 0.2.0-candidate
 # Aciklama: Offline source check only, no game files/patcher binary/release.
 # Bagimli Oldugu Katman: tools/tests/test_ragnar_legacy_theme.py | beam-ui/public/index.html
 name: Ragnar Legacy and Classic Themes Offline QA
@@ -13,9 +13,12 @@ on:
       - "beam-ui/public/index.html"
       - "beam-ui/public/assets/ragnar-legacy.css"
       - "beam-ui/public/assets/ragnar-classic.css"
+      - "beam-ui/public/assets/levelup-modern.css"
       - "themes/ragnar-classic/**"
+      - "themes/levelup-modern/**"
       - "themes/README.md"
       - "tools/tests/test_ragnar_classic_theme.py"
+      - "tools/tests/test_levelup_modern_theme.py"
       - "themes/ragnar-legacy/**"
       - "tools/tests/test_ragnar_legacy_theme.py"
       - ".github/workflows/ragnar-legacy-theme-qa.yml"
@@ -24,9 +27,12 @@ on:
       - "beam-ui/public/index.html"
       - "beam-ui/public/assets/ragnar-legacy.css"
       - "beam-ui/public/assets/ragnar-classic.css"
+      - "beam-ui/public/assets/levelup-modern.css"
       - "themes/ragnar-classic/**"
+      - "themes/levelup-modern/**"
       - "themes/README.md"
       - "tools/tests/test_ragnar_classic_theme.py"
+      - "tools/tests/test_levelup_modern_theme.py"
       - "themes/ragnar-legacy/**"
       - "tools/tests/test_ragnar_legacy_theme.py"
       - ".github/workflows/ragnar-legacy-theme-qa.yml"
@@ -47,6 +53,8 @@ jobs:
         run: python3 -B -m unittest discover -s tools/tests -p 'test_ragnar_legacy_theme.py' -v
       - name: Seven screenshot-based classic launcher UI layout and safety contracts
         run: python3 -B -m unittest discover -s tools/tests -p 'test_ragnar_classic_theme.py' -v
+      - name: LevelUp Modern preference, settings, and offline visual QA
+        run: python3 -B -m unittest discover -s tools/tests -p 'test_levelup_modern_theme.py' -v
       - name: Extract inline Beam UI JavaScript for syntax validation
         shell: bash
         run: |
