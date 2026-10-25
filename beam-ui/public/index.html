@@ -1324,6 +1324,7 @@
             </select>
             <p class="theme-settings-status" id="theme-settings-status" role="status" aria-live="polite"></p>
             <div class="theme-settings-actions">
+                <button type="button" id="qa-workspace-select" onclick="selectQaWorkspace()" hidden>Test Klasörü Seç</button>
                 <button type="button" id="theme-game-setup" onclick="openGameSetupFromSettings()">Oyun Ayarları</button>
                 <button type="button" onclick="closeThemeSettings()">Kapat</button>
             </div>
@@ -1362,6 +1363,7 @@
         let lastLoadedConfig = null;
         let activeLauncherTheme = 'default';
         let lastThemeSettingsTrigger = null;
+        let isOfflineQa = false;
 
         function safeStoredTheme() {
             try {
@@ -1445,6 +1447,18 @@
             }
         }
 
+        async function selectQaWorkspace() {
+            if (!isOfflineQa || !isTauri || isThemePreview) return;
+            const status = document.getElementById('theme-settings-status');
+            try {
+                const directory = await invoke('select_game_directory');
+                lastLoadedConfig = await invoke('get_config');
+                status.textContent = `Güvenli QA klasörü seçildi: ${directory}`;
+            } catch (error) {
+                status.textContent = `Klasör değiştirilmedi: ${error}`;
+            }
+        }
+
         async function openGameSetupFromSettings() {
             if (isThemePreview) return;
             closeThemeSettings();
@@ -1516,7 +1530,14 @@
         async function checkPatchesOnStartup() {
             const progressLabel = document.getElementById('progress-label');
             const playButton = document.getElementById('play-button');
-            
+            if (isOfflineQa) {
+                playButton.disabled = true;
+                playButton.textContent = 'QA / Oyun Kapalı';
+                progressLabel.textContent =
+                    'TEST MODU: Sadece izole klasöre Manual Patch uygulanabilir.';
+                return;
+            }
+
             try {
                 progressLabel.textContent = 'Checking for updates...';
                 playButton.disabled = true;
@@ -1544,6 +1565,7 @@
         }
 
         async function handlePlayButton() {
+            if (isOfflineQa) return;
             const playButton = document.getElementById('play-button');
             
             if (isPatchingComplete || playButton.textContent === 'Play Now') {
@@ -1628,9 +1650,15 @@
         }
 
         async function manualPatch() {
+            if (isThemePreview) return;
+            const progressLabel = document.getElementById('progress-label');
             try {
                 await invoke('manual_patch');
+                progressLabel.textContent = isOfflineQa
+                    ? 'QA PATCH BAŞARILI: levelup-qa.grf oluşturuldu veya güncellendi.'
+                    : 'Manual patch completed successfully.';
             } catch (error) {
+                progressLabel.textContent = `Manual patch başarısız: ${error}`;
                 alert(`Manual patch failed: ${error}`);
             }
         }
@@ -2010,7 +2038,9 @@
         async function promptGameDirectorySelection() {
             try {
                 const result = await window.__TAURI__.dialog.message(
-                    'Welcome! Please select your game directory to continue.\n\nThe patcher will search for the game executable in both the selected directory and the patcher folder.',
+                    isOfflineQa
+                        ? 'LevelUp QA test modu. Yalnızca YENİ ve BOŞ bir test klasörü seçin. Gerçek Ragnarok oyun klasörünü seçmeyin.'
+                        : 'Welcome! Please select your game directory to continue.\n\nThe patcher will search for the game executable in both the selected directory and the patcher folder.',
                     { title: 'Initial Setup', type: 'info', okLabel: 'Select Directory' }
                 );
                 
@@ -2026,7 +2056,9 @@
                 } catch (err) {
                     console.error('Failed to select directory:', err);
                     await window.__TAURI__.dialog.message(
-                        'No directory selected. The patcher will look for game files in the patcher folder.\n\nYou can set the game directory later from settings.',
+                        isOfflineQa
+                            ? 'QA klasörü seçilmedi. Test patch uygulanmayacak. Ayarlar içinden boş bir klasör seçebilirsiniz.'
+                            : 'No directory selected. The patcher will look for game files in the patcher folder.\n\nYou can set the game directory later from settings.',
                         { title: 'Setup Skipped', type: 'warning' }
                     );
                 }
@@ -2042,7 +2074,14 @@
             setInterval(updateServerStatus, 30000);
             
             let config = await invoke('get_config');
-            
+            isOfflineQa = Boolean(isTauri && config?.patcher?.qa_only);
+            if (isOfflineQa) {
+                document.getElementById('qa-workspace-select').hidden = false;
+                document.getElementById('theme-game-setup').disabled = true;
+                document.getElementById('register-btn-main').disabled = true;
+                document.getElementById('play-button').disabled = true;
+            }
+
             const needsSetup = await invoke('check_initial_setup');
             if (needsSetup && isTauri) {
                 config = await promptGameDirectorySelection();
