@@ -1,0 +1,128 @@
+# Dosya Yolu: .github/workflows/windows-setup-patch-qa.yml
+# Amac: Gercek Windows x64 Beam QA exe + Inno Setup artifact ve local patch E2E
+# Modul - GitHub Actions / Windows-only QA
+# Version: 0.1.0-candidate
+# Aciklama: No tags/releases, no live GRF, isolated HTTP fixture and installer smoke
+# Bagimli Oldugu Katman: installer/windows/* | tools/QA-PATCH-E2E.py
+
+name: Beam Windows Setup and Patch QA
+
+on:
+  pull_request:
+    paths:
+      - "installer/windows/**"
+      - "beam-ui/**"
+      - "beam-patcher/**"
+      - "beam-core/**"
+      - "beam-formats/**"
+      - "tools/QA-PATCH-E2E.py"
+      - "tools/tests/prepare_rust_beam_fixture.py"
+      - "tools/build_map_beam.py"
+      - ".github/workflows/windows-setup-patch-qa.yml"
+  push:
+    branches:
+      - feat/windows-setup-patch-qa-20261025
+    paths:
+      - "installer/windows/**"
+      - "beam-ui/**"
+      - "beam-patcher/**"
+      - "beam-core/**"
+      - "beam-formats/**"
+      - "tools/QA-PATCH-E2E.py"
+      - ".github/workflows/windows-setup-patch-qa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-qa-installer:
+    name: Windows x64 Rust BEAM E2E and installer
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout safe QA branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install stable Rust with rustfmt
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: beam-windows-setup-qa
+      - name: Test binary format and patcher core
+        run: |
+          cargo test -p beam-formats --lib
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p beam-core --lib
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        shell: pwsh
+      - name: Build actual Beam/Tauri Windows executable
+        run: cargo build --release -p beam-patcher
+      - name: Synthetic BEAM download -> GRF 0x200 -> cached rerun -> corrupt SHA refusal
+        run: |
+          python tools/QA-PATCH-E2E.py --exe target/release/beam-patcher.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        shell: pwsh
+      - name: Locate or install Inno Setup compiler
+        shell: pwsh
+        run: |
+          $iscc = Join-Path "${env:ProgramFiles(x86)}" "Inno Setup 6/ISCC.exe"
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC.exe was not installed" }
+          "BEAM_QA_ISCC=$iscc" >> $env:GITHUB_ENV
+      - name: Build per-user unsigned TEST ONLY setup (no release)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path 'target/release/beam-patcher.exe').Path
+          $out = Join-Path (Get-Location).Path 'build/windows-setup-qa'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          & $env:BEAM_QA_ISCC "/DBeamExe=$exe" "/DSetupOut=$out" 'installer/windows/BeamPatcher-QA.iss'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $setup = Join-Path $out 'LevelUpGames-BeamPatcher-QA-Setup.exe'
+          if (-not (Test-Path -LiteralPath $setup)) { throw "Inno Setup output missing" }
+          $sha = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+          $bytes = (Get-Item -LiteralPath $setup).Length
+          @{ schema='levelupgt.beam.windows-setup-qa.v1'; source_sha='${{ github.sha }}'; sha256=$sha; bytes=$bytes; release=$false; actual_windows_client='NOT RUN'; signed=$false } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $out 'setup-qa-report.json') -Encoding utf8
+      - name: Quiet install into disposable directory and inspect payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Resolve-Path 'build/windows-setup-qa/LevelUpGames-BeamPatcher-QA-Setup.exe').Path
+          $installed = Join-Path $env:RUNNER_TEMP 'LevelUp Games Beam QA Smoke'
+          $args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="' + $installed + '"'
+          $process = Start-Process -FilePath $setup -ArgumentList $args -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Installer returned $($process.ExitCode)" }
+          $exe = Join-Path $installed 'beam-patcher.exe'
+          $config = Join-Path $installed 'config.yml'
+          $guide = Join-Path $installed 'README-QA.txt'
+          foreach ($file in @($exe,$config,$guide)) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing installer payload: $file" }
+          }
+          $content = Get-Content -LiteralPath $config -Raw
+          if (-not $content.Contains('target_grf: "levelup-qa.grf"')) { throw "Safe QA GRF profile not installed" }
+          if (-not $content.Contains('http://127.0.0.1:9/disabled')) { throw "Live patch feed unexpectedly configured" }
+          if (-not $content.Contains('client_exe: "NO_CLIENT_CONFIGURED.exe"')) { throw "QA client launch not disabled" }
+          $uninstaller = Join-Path $installed 'unins000.exe'
+          if (-not (Test-Path -LiteralPath $uninstaller)) { throw "Uninstaller missing" }
+          $done = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -PassThru -Wait
+          if ($done.ExitCode -ne 0) { throw "Uninstaller returned $($done.ExitCode)" }
+          Write-Host 'QA_INSTALL_UNINSTALL_OK; no client data was bundled'
+      - name: Upload short-lived unsigned QA setup only
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: levelup-beam-windows-setup-qa-${{ github.sha }}
+          path: |
+            build/windows-setup-qa/LevelUpGames-BeamPatcher-QA-Setup.exe
+            build/windows-setup-qa/setup-qa-report.json
+          retention-days: 7
+          if-no-files-found: error
