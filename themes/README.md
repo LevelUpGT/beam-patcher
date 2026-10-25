@@ -33,11 +33,19 @@ for players by default:
   two right mini previews, dual rainbow progress styling and round Start.
   Guide: [`ragnar-classic/README.md`](ragnar-classic/README.md).
 
+- **LevelUp Modern:** `ui.theme: levelup-modern` — blue/gold fantasy-inspired
+  launcher styling, plus an in-app appearance selector for all four themes.
+  Guide: [`levelup-modern/README.md`](levelup-modern/README.md).
+
+The launcher gear button now opens **Gorunum ve Ayarlar**. You can switch
+themes immediately and save the choice on this device without writing to
+`config.yml`; the same dialog retains access to the native Game Setup action.
+
 Only the selected theme CSS is enabled at runtime. Both leave the original
 Beam default style intact and preserve patcher command handlers. No old
 THOR binary is used to patch a modern 2022 GRF in these themes.
 
-**Browser QA without the game:** open `beam-ui/public/index.html?theme=ragnar-classic`
+**Browser QA without the game:** open `beam-ui/public/index.html?theme=levelup-modern` (or `?theme=ragnar-classic`)
 from a checked-out branch. That preview disables patching/launching. Do
 not copy the 2015 THOR config or deploy the locked 2022 patch feed.
 ## Creating Your Own Theme
