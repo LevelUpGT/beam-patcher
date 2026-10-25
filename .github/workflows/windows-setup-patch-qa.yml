@@ -1,7 +1,7 @@
 # Dosya Yolu: .github/workflows/windows-setup-patch-qa.yml
 # Amac: Gercek Windows x64 Beam QA exe + Inno Setup artifact ve local patch E2E
 # Modul - GitHub Actions / Windows-only QA
-# Version: 0.1.0-candidate
+# Version: 0.2.0-candidate
 # Aciklama: No tags/releases, no live GRF, isolated HTTP fixture and installer smoke
 # Bagimli Oldugu Katman: installer/windows/* | tools/QA-PATCH-E2E.py
 
@@ -116,6 +116,19 @@ jobs:
           if (-not $content.Contains('target_grf: "levelup-qa.grf"')) { throw "Safe QA GRF profile not installed" }
           if (-not $content.Contains('http://127.0.0.1:9/disabled')) { throw "Live patch feed unexpectedly configured" }
           if (-not $content.Contains('client_exe: "NO_CLIENT_CONFIGURED.exe"')) { throw "QA client launch not disabled" }
+          if (-not $content.Contains('qa_only: true')) { throw "Required QA isolation policy missing" }
+          # Freshly installed launcher must reject unattended patching without
+          # a selected isolated workspace.
+          $headless = Start-Process -FilePath $exe -ArgumentList '--headless' -WorkingDirectory $installed -PassThru -Wait
+          if ($headless.ExitCode -eq 0) { throw "Unconfigured QA startup unexpectedly succeeded" }
+          if (Test-Path (Join-Path $installed 'levelup-qa.grf')) { throw "Unconfigured launcher wrote a GRF" }
+          # Re-running the installer must preserve a user's edited config.
+          Add-Content -LiteralPath $config -Value '# QA_UPGRADE_PRESERVATION_MARKER'
+          $upgrade = Start-Process -FilePath $setup -ArgumentList $args -PassThru -Wait
+          if ($upgrade.ExitCode -ne 0) { throw "QA upgrade returned $($upgrade.ExitCode)" }
+          if (-not (Get-Content -LiteralPath $config -Raw).Contains('# QA_UPGRADE_PRESERVATION_MARKER')) {
+            throw "QA upgrade unexpectedly overwrote local config"
+          }
           $uninstaller = Join-Path $installed 'unins000.exe'
           if (-not (Test-Path -LiteralPath $uninstaller)) { throw "Uninstaller missing" }
           $done = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -PassThru -Wait
