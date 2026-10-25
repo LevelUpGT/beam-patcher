@@ -233,6 +233,15 @@ def run(output_dir, source_sha):
             panel.locator(".theme-settings-close").click()
             require(panel.is_hidden(), f"{theme}: modal did not close")
             page.locator("#news-cards .news-item").first.wait_for(timeout=8000)
+            page.wait_for_function("""() => [...document.querySelectorAll('#image-grid img')]
+                .every(img => img.complete && img.naturalWidth > 0 && img.naturalHeight > 0)
+            """, timeout=10000)
+            require(
+                page.evaluate("""() => [...document.querySelectorAll('#image-grid img')]
+                    .every(img => img.currentSrc.startsWith(document.baseURI.replace('index.html', 'assets/')))
+                """),
+                f"{theme}: grid image loaded from outside embedded frontend assets",
+            )
             screenshot = output_dir / f"{theme}.png"
             page.screenshot(path=str(screenshot), animations="disabled")
             require(screenshot.stat().st_size > 5000, f"{theme}: suspicious screenshot")
@@ -290,6 +299,7 @@ def run(output_dir, source_sha):
         "viewport": {"width": 900, "height": 620},
         "themes": list(THEMES),
         "preference_survived_reload": True,
+        "embedded_grid_images_loaded": True,
         "game_or_patch_commands": 0,
         "qa_ui_blocks_play_and_patch_feed": True,
         "external_requests_blocked": len(blocked),
