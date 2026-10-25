@@ -442,27 +442,33 @@ pub async fn open_setup(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
+// Dosya Yolu: beam-ui/src/commands.rs
+// Amac: Manual patch installs the selected BEAM/THOR/GPF/RGZ archive via core Patcher
+// Modul - Tauri command adapter
+// Version: 1.1.0-candidate
+// Aciklama: Never silently copy an archive into the game directory as if it was applied
+// Bagimli Oldugu Katman: beam-core/src/patcher.rs | beam-ui/src/lib.rs
 #[tauri::command]
 pub async fn manual_patch(state: State<'_, AppState>) -> Result<(), String> {
     let selected = tauri::api::dialog::blocking::FileDialogBuilder::new()
-        .add_filter("Patch Files", &["gpf", "patch", "grf"])
+        .add_filter("Supported Patch Archives", &["beam", "thor", "rgz", "gpf"])
         .pick_file()
-        .ok_or("No file selected")?;
-    
-    let config = state.config.lock().unwrap().clone();
-    let game_dir = config.app.game_directory
-        .ok_or("Game directory not set")?;
-    
-    let target_dir = PathBuf::from(&game_dir);
-    let file_name = selected.file_name()
-        .ok_or("Invalid file name")?;
-    
-    let destination = target_dir.join(file_name);
-    
-    std::fs::copy(&selected, &destination)
-        .map_err(|e| format!("Failed to copy patch file: {}", e))?;
-    
-    Ok(())
+        .ok_or("No patch archive selected")?;
+
+    let config = state.config.lock().map_err(|e| e.to_string())?.clone();
+    // Require a consciously selected game directory. Never write GRF under the
+    // installer/launcher directory as a fallback from this GUI action.
+    let directory = config.app.game_directory.as_ref()
+        .ok_or("Select an isolated game directory before manual patching")?;
+    if !std::path::Path::new(directory).is_dir() {
+        return Err("Configured game directory does not exist".to_string());
+    }
+    if !config.patcher.allow_manual_patch {
+        return Err("Manual patching is disabled by the active profile".to_string());
+    }
+
+    let patcher = Patcher::new(config).map_err(|e| e.to_string())?;
+    patcher.manual_patch(&selected).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
