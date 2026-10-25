@@ -2,7 +2,7 @@
 # Dosya Yolu: tools/QA-PATCH-E2E.py
 # Amac: Yerel HTTP BEAM patchi CLI ile gercek GRF dosyasina uygular, SHA/cache korumasini sinar
 # Modul - Python integration QA harness
-# Version: 0.1.0-candidate
+# Version: 0.2.0-candidate
 # Aciklama: Her calismada yeni gecici klasor, sentetik harita, localhost, no live client
 # Bagimli Oldugu Katman: tools/tests/prepare_rust_beam_fixture.py | beam-patcher/src/main.rs
 
@@ -109,6 +109,29 @@ def main():
             if sha256(grf) != before:
                 raise AssertionError("Second run unexpectedly rewrote unchanged GRF")
 
+            # Also exercise the real local manual-patch path (same core call
+            # used by the GUI). This is a DIFFERENT synthetic GRF and directory.
+            manual_game = base / "manual-client"
+            manual_game.mkdir()
+            manual_config = base / "manual-config.yml"
+            manual_config.write_text(
+                qa_text.replace(json.dumps(str(game)), json.dumps(str(manual_game))),
+                encoding="utf-8",
+            )
+            manual = subprocess.run(
+                [str(exe), "--headless", "--config", str(manual_config),
+                 "--manual-patch", str(archive)],
+                cwd=manual_game, text=True, capture_output=True,
+                timeout=120, check=False,
+            )
+            if manual.returncode != 0:
+                raise AssertionError("Manual BEAM patch was not applied: " + manual.stderr[-1500:])
+            manual_grf = manual_game / "levelup-qa.grf"
+            if not manual_grf.is_file():
+                raise AssertionError("Manual patch path failed to create synthetic GRF")
+            if struct.unpack_from("<I", manual_grf.read_bytes(), 38)[0] != entry_count:
+                raise AssertionError("Manual patch GRF has an unexpected file count")
+
             # SHA mismatch must be rejected before any GRF write or cache mark.
             (publish / "bad.beam").write_bytes(b"untrusted corrupted fixture")
             (publish / "patchlist.txt").write_text(
@@ -132,6 +155,7 @@ def main():
                 "rerun_idempotent": True,
                 "corrupt_patch_rejected": True,
                 "cache_protected": True,
+                "manual_beam_patch_applied": True,
                 "live_game_test": "NOT RUN",
                 "published": False,
             }, sort_keys=True))
