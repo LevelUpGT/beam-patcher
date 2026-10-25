@@ -150,7 +150,7 @@ def main():
             # files BEFORE cache creation or GRF writes.
             occupied = base / "occupied-real-client"
             occupied.mkdir()
-            (occupied / "DATA.INI").write_bytes(b"[Data]\\n0=data.grf\\n")
+            (occupied / "DATA.INI").write_bytes(b"[Data]\n0=data.grf\n")
             unsafe_config = base / "occupied-config.yml"
             unsafe_config.write_text(
                 qa_text.replace(json.dumps(str(game)), json.dumps(str(occupied))),
@@ -180,7 +180,7 @@ def main():
                 encoding="utf-8",
             )
             (publish / "patchlist.txt").write_text(
-                f"bad.beam {'a' * 64}\\n", encoding="utf-8",
+                f"bad.beam {'a' * 64}\n", encoding="utf-8",
             )
             invoke(exe, bad_config, should_pass=False)
             if (fresh / "levelup-qa.grf").exists():
