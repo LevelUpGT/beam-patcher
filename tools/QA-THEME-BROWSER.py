@@ -2,7 +2,7 @@
 # Dosya Yolu: tools/QA-THEME-BROWSER.py
 # Amac: Dort Beam tema gorunumunu gercek Chromium uzerinde offline smoke ile dogrular
 # Modul - Python / Playwright / Visual QA
-# Version: 0.2.1-candidate
+# Version: 0.2.2-candidate
 # Aciklama: Yerel dosyalardan render; Tauri komutlari salt okunur test doubles; oyun/patch yok
 # Bagimli Oldugu Katman: beam-ui/public/index.html | assets/*.css | browser QA
 
@@ -204,6 +204,25 @@ def run(output_dir, source_sha):
                     theme,
                 ),
                 f"{theme}: wrong active body CSS",
+            )
+            regions = page.evaluate("""() => {
+                const visible = (selector) => {
+                    const element = document.querySelector(selector);
+                    return element && getComputedStyle(element).display !== 'none';
+                };
+                return {
+                    modernNav: visible('.modern-nav'),
+                    modernHero: visible('.modern-hero'),
+                    classicRail: visible('.classic-ad-rail')
+                };
+            }""")
+            require(
+                regions == {
+                    "modernNav": theme == "levelup-modern",
+                    "modernHero": theme == "levelup-modern",
+                    "classicRail": theme == "ragnar-classic",
+                },
+                f"{theme}: inactive theme content visible: {regions}",
             )
             require(
                 page.evaluate(
