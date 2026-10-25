@@ -2,7 +2,7 @@
 # Dosya Yolu: tools/QA-PATCH-E2E.py
 # Amac: Yerel HTTP BEAM patchi CLI ile gercek GRF dosyasina uygular, SHA/cache korumasini sinar
 # Modul - Python integration QA harness
-# Version: 0.2.0-candidate
+# Version: 0.3.0-candidate
 # Aciklama: Her calismada yeni gecici klasor, sentetik harita, localhost, no live client
 # Bagimli Oldugu Katman: tools/tests/prepare_rust_beam_fixture.py | beam-patcher/src/main.rs
 
@@ -145,6 +145,48 @@ def main():
                 raise AssertionError("Failed checksum marked patch as applied")
             if (game / "levelup-qa.grf.bak").exists():
                 raise AssertionError("GRF left a backup after aborted download")
+
+            # Reject a fake 'game directory' containing existing live-looking
+            # files BEFORE cache creation or GRF writes.
+            occupied = base / "occupied-real-client"
+            occupied.mkdir()
+            (occupied / "DATA.INI").write_bytes(b"[Data]\\n0=data.grf\\n")
+            unsafe_config = base / "occupied-config.yml"
+            unsafe_config.write_text(
+                qa_text.replace(json.dumps(str(game)), json.dumps(str(occupied))),
+                encoding="utf-8",
+            )
+            invoke(exe, unsafe_config, should_pass=False)
+            if (occupied / ".patch_cache").exists() or (occupied / "levelup-qa.grf").exists():
+                raise AssertionError("Unsafe workspace unexpectedly modified")
+            if not (occupied / "DATA.INI").is_file():
+                raise AssertionError("Existing client file was modified")
+
+            # Reject a remote patch source even when its local target is empty.
+            remote_config = base / "remote-config.yml"
+            remote_config.write_text(
+                qa_text.replace(uri, "https://updates.example.net/untrusted"),
+                encoding="utf-8",
+            )
+            invoke(exe, remote_config, should_pass=False)
+
+            # When the only archive fails SHA256, no placeholder or empty GRF
+            # should be created at all. A cached .patch_cache directory is okay.
+            fresh = base / "failed-fresh-client"
+            fresh.mkdir()
+            bad_config = base / "failed-config.yml"
+            bad_config.write_text(
+                qa_text.replace(json.dumps(str(game)), json.dumps(str(fresh))),
+                encoding="utf-8",
+            )
+            (publish / "patchlist.txt").write_text(
+                f"bad.beam {'a' * 64}\\n", encoding="utf-8",
+            )
+            invoke(exe, bad_config, should_pass=False)
+            if (fresh / "levelup-qa.grf").exists():
+                raise AssertionError("Failed patch created an empty GRF")
+            if (fresh / ".patch_cache/applied_patches.txt").exists():
+                raise AssertionError("Failed patch wrote applied-patches cache")
             print(json.dumps({
                 "schema": "levelupgt.beam.patch-e2e-qa.v1",
                 "source": "synthetic generated BEAM archive, local HTTP only",
@@ -156,6 +198,9 @@ def main():
                 "corrupt_patch_rejected": True,
                 "cache_protected": True,
                 "manual_beam_patch_applied": True,
+                "occupied_workspace_rejected": True,
+                "remote_patch_feed_rejected": True,
+                "failed_fresh_patch_did_not_create_grf": True,
                 "live_game_test": "NOT RUN",
                 "published": False,
             }, sort_keys=True))
