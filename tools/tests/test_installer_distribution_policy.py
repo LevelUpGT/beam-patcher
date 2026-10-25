@@ -115,7 +115,7 @@ class InstallerDistributionContractTests(unittest.TestCase):
                 "windows-latest\nTurkuazInstaller NSIS\nverify_installer_pair.py\nactions/upload-artifact@v4"
             )
             standalone = workflows / "windows-setup-patch-qa.yml"
-            standalone.write_text("uses: actions/upload-artifact@v4\nname: nsis-setup.exe\n")
+            standalone.write_text("- uses: actions/upload-artifact@v4\n  name: nsis-setup.exe\n")
             self.assertTrue(any("standalone setup upload" in err for err in policy_errors(root)))
             standalone.unlink()
             self.assertFalse(policy_errors(root))
