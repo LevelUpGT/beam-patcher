@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+# Dosya Yolu: tools/QA-THEME-BROWSER.py
+# Amac: Dort Beam tema gorunumunu gercek Chromium uzerinde offline smoke ile dogrular
+# Modul - Python / Playwright / Visual QA
+# Version: 0.1.0-candidate
+# Aciklama: Yerel dosyalardan render; Tauri komutlari salt okunur test doubles; oyun/patch yok
+# Bagimli Oldugu Katman: beam-ui/public/index.html | assets/*.css | browser QA
+
+"""Offline Chromium UI smoke and screenshot artifacts. Not a Tauri or gameplay test."""
+
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+THEMES = ("default", "ragnar-legacy", "ragnar-classic", "levelup-modern")
+PREFERENCE = "beam.launcher.theme.v1"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+HTML = REPO_ROOT / "beam-ui/public/index.html"
+
+# No real client, patch endpoint, game process, user credentials, or updater.
+# Reads local HTML/CSS and injects an entirely inert Tauri command adapter.
+MOCK_TAURI = r"""
+(() => {
+  const calls = [];
+  window.__QA_NATIVE_CALLS = calls;
+  const config = {
+    app: {
+      server_name: "LEVELUP GAMES / OFFLINE QA",
+      version: "0.1.0-qa",
+      bgm_autoplay: false,
+      video_background_enabled: false,
+      limited_items: [],
+      grid_images: [],
+      social_links: [],
+      register_url: null
+    },
+    ui: {
+      theme: "ragnar-legacy",
+      status_image_url: null
+    }
+  };
+  window.__TAURI__ = {
+    tauri: {
+      invoke: async (command) => {
+        calls.push(command);
+        switch (command) {
+          case "get_config": return config;
+          case "check_initial_setup": return false;
+          case "get_news": return [
+            { id: 1, title: "LevelUp Games - offline QA", category: "event", url: "about:blank" },
+            { id: 2, title: "Gorunum temalari", category: "event", url: "about:blank" }
+          ];
+          case "get_server_status":
+            return { login_online: false, char_online: false, map_online: false };
+          case "check_patches_available":
+            throw new Error("OFFLINE_QA_NO_PATCH_ACCESS");
+          case "open_setup": return null;
+          default: throw new Error("OFFLINE_QA_COMMAND_BLOCKED:" + command);
+        }
+      },
+      convertFileSrc: () => { throw new Error("OFFLINE_QA_NO_FILE_RESOLVE"); }
+    },
+    window: {appWindow: {minimize: async () => {}, close: async () => {}}},
+    event: {listen: async () => () => {}}
+  };
+})();
+"""
+
+QA_WATERMARK = """
+body::after {
+    content: "OFFLINE BROWSER QA - NOT A GAME CLIENT";
+    position: fixed; z-index: 3000; bottom: 1px; left: 50%;
+    transform: translateX(-50%);
+    padding: 2px 9px; border-radius: 4px;
+    color: #ffffff; background: #740d24; font: 600 10px Arial,sans-serif;
+    white-space: nowrap; pointer-events: none;
+}
+"""
+
+
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
+def digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def run(output_dir, source_sha):
+    if not HTML.is_file():
+        raise RuntimeError("Beam HTML is missing")
+    if output_dir.exists() and any(output_dir.iterdir()):
+        raise RuntimeError("QA_OUTPUT_ALREADY_EXISTS: do not overwrite existing evidence")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError("Playwright is not installed; see theme QA docs") from exc
+
+    artifacts = []
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 900, "height": 620}, device_scale_factor=1)
+        context.add_init_script(MOCK_TAURI)
+        page = context.new_page()
+        blocked = []
+
+        def route(request_route):
+            url = request_route.request.url
+            if url.startswith("http://") or url.startswith("https://"):
+                blocked.append(url.split("?", 1)[0])
+                request_route.abort()
+            else:
+                request_route.continue_()
+
+        page.route("**/*", route)
+        page.goto(HTML.resolve().as_uri(), wait_until="domcontentloaded", timeout=30000)
+        page.wait_for_function("document.body.classList.contains('theme-ragnar-legacy')")
+        page.add_style_tag(content=QA_WATERMARK)
+
+        for theme in THEMES:
+            # Open the real gear button and click each actual preview card.
+            page.locator("#theme-settings-open").click(timeout=8000)
+            panel = page.locator("#theme-settings-modal")
+            require(panel.is_visible(), "Theme settings modal did not open")
+            choice = panel.locator(f'button[data-launcher-theme="{theme}"]')
+            choice.click(timeout=8000)
+            require(choice.get_attribute("aria-pressed") == "true", f"{theme}: aria-pressed")
+            require(
+                page.locator("#theme-settings-choice").input_value() == theme,
+                f"{theme}: native select not synced",
+            )
+            require(
+                page.evaluate(
+                    "(name) => window.localStorage.getItem('beam.launcher.theme.v1') === name",
+                    theme,
+                ),
+                f"{theme}: preference not stored",
+            )
+            require(
+                page.evaluate(
+                    "(name) => name === 'default' ?"
+                    " !document.body.classList.contains('theme-ragnar-classic') &&"
+                    " !document.body.classList.contains('theme-ragnar-legacy') &&"
+                    " !document.body.classList.contains('theme-levelup-modern') :"
+                    " document.body.classList.contains('theme-' + name)",
+                    theme,
+                ),
+                f"{theme}: wrong active body CSS",
+            )
+            require(
+                page.evaluate(
+                    "() => !document.querySelector('#theme-settings-modal').hidden"
+                ),
+                f"{theme}: modal unexpectedly hidden",
+            )
+            panel.locator(".theme-settings-close").click()
+            require(panel.is_hidden(), f"{theme}: modal did not close")
+            page.locator("#news-cards .news-item").first.wait_for(timeout=8000)
+            screenshot = output_dir / f"{theme}.png"
+            page.screenshot(path=str(screenshot), animations="disabled")
+            require(screenshot.stat().st_size > 5000, f"{theme}: suspicious screenshot")
+            artifacts.append({"theme": theme, "file": screenshot.name, "sha256": digest(screenshot),
+                              "bytes": screenshot.stat().st_size})
+
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function("document.body.classList.contains('theme-levelup-modern')")
+        require(page.locator("#theme-settings-choice").input_value() == "levelup-modern",
+                "Theme did not survive reload")
+        require(
+            page.evaluate("() => !window.__QA_NATIVE_CALLS.some(x => ['launch_game','start_patching','manual_patch','reset_cache'].includes(x))"),
+            "Forbidden native command was called during theme QA",
+        )
+        require(page.locator("#theme-game-setup").is_enabled(),
+                "Mocked Tauri setup should remain accessible")
+        require(
+            page.evaluate("() => window.__QA_NATIVE_CALLS.includes('check_patches_available')"),
+            "Tauri-like launch path was not exercised",
+        )
+        browser.close()
+
+    summary = {
+        "schema": "levelupgt.beam-theme-browser-qa.v1",
+        "source_sha": source_sha,
+        "browser": "Playwright Chromium (offline mocked Tauri; NOT WebView2)",
+        "viewport": {"width": 900, "height": 620},
+        "themes": list(THEMES),
+        "preference_survived_reload": True,
+        "game_or_patch_commands": 0,
+        "external_requests_blocked": len(blocked),
+        "screenshots": artifacts,
+        "desktop_webview2": "NOT RUN",
+        "actual_gameplay": "NOT RUN",
+        "published": False,
+    }
+    (output_dir / "qa-report.json").write_text(
+        json.dumps(summary, ensure_ascii=True, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(json.dumps(summary, ensure_ascii=True))
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=REPO_ROOT / "build/theme-visual-qa")
+    parser.add_argument("--source-sha", default="unknown")
+    args = parser.parse_args()
+    try:
+        return run(args.output_dir.resolve(), args.source_sha)
+    except Exception as exc:
+        print("THEME_BROWSER_QA_FAILED: " + str(exc), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
