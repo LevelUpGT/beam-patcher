@@ -2,11 +2,12 @@
 # Dosya Yolu: tools/tests/test_levelup_modern_theme.py
 # Amac: LevelUp Modern tema degistirme ve offline QA guvenlik kontratini dogrular
 # Modul - Python unittest / Node source behavior QA
-# Version: 0.2.0-candidate
+# Version: 0.3.0-candidate
 # Aciklama: CSS tema scope, browser-only preview, local preference ve native setup sinirlari
 # Bagimli Oldugu Katman: beam-ui/public/index.html | assets/levelup-modern.css
 
 import re
+import runpy
 import shutil
 import subprocess
 import unittest
@@ -63,6 +64,18 @@ class LevelupModernThemeTests(unittest.TestCase):
         self.assertEqual(CSS.count("{"), CSS.count("}"))
         self.assertIn("Tauri", DOC)
         self.assertIn("No licensed character artwork", DOC)
+
+    def test_browser_qa_embedded_tauri_mock_has_valid_javascript(self):
+        if not shutil.which("node"):
+            self.skipTest("Node.js missing; CI validates mock syntax")
+        globals_ = runpy.run_path(str(ROOT / "tools/QA-THEME-BROWSER.py"))
+        mock_js = globals_["MOCK_TAURI"]
+        check = subprocess.run(
+            ["node", "--check", "-"], input=mock_js,
+            text=True, capture_output=True, timeout=15, check=False
+        )
+        self.assertEqual(check.returncode, 0, check.stderr)
+        self.assertIn("OFFLINE_QA_COMMAND_BLOCKED", mock_js)
 
     def test_inline_javascript_syntax_and_ui_behavior(self):
         if not shutil.which("node"):
