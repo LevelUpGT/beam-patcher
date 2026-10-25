@@ -105,6 +105,7 @@ class InstallerDistributionContractTests(unittest.TestCase):
             for rel in ("installer/windows/BeamPatcher-NSIS-Backup.nsi",
                         "tools/verify_installer_pair.py",
                         "tools/check_installer_workflows.py",
+                        "tools/Confirm-TurkuazTrust.ps1",
                         "docs/INSTALLER-STRATEGY-TURKUAZ.md"):
                 file = root / rel
                 file.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +113,7 @@ class InstallerDistributionContractTests(unittest.TestCase):
             workflows = root / ".github/workflows"
             workflows.mkdir(parents=True)
             (workflows / "dual-installer-policy.yml").write_text(
-                "windows-latest\nTurkuazInstaller NSIS\nverify_installer_pair.py\nactions/upload-artifact@v4"
+                "windows-latest\nTurkuazInstaller NSIS\nverify_installer_pair.py\nConfirm-TurkuazTrust.ps1\nactions/upload-artifact@v4"
             )
             standalone = workflows / "windows-setup-patch-qa.yml"
             standalone.write_text("- uses: actions/upload-artifact@v4\n  name: nsis-setup.exe\n")
