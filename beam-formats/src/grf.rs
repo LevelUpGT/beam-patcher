@@ -651,13 +651,35 @@ impl Grf {
         // Release any read handle on the original before swapping.
         drop(old_grf);
 
+        // A backup may be evidence from a previously interrupted update.
+        // Never silently delete or overwrite it.
         if original_exists {
-            // Best-effort backup: ignore failure (e.g. .bak already exists on Windows).
-            let _ = std::fs::remove_file(&backup_path);
+            if backup_path.exists() {
+                let _ = std::fs::remove_file(&tmp_path);
+                return Err(Error::Custom(format!(
+                    "GRF backup already exists at {:?}; inspect/recover it before patching",
+                    backup_path
+                )));
+            }
             std::fs::rename(&self.file_path, &backup_path)?;
         }
-        std::fs::rename(&tmp_path, &self.file_path)?;
+        if let Err(swap_error) = std::fs::rename(&tmp_path, &self.file_path) {
+            // Restore the original immediately if installing the new GRF fails.
+            // Keep the backup intact on rollback error for manual recovery.
+            let _ = std::fs::remove_file(&tmp_path);
+            if original_exists {
+                if let Err(rollback_error) = std::fs::rename(&backup_path, &self.file_path) {
+                    return Err(Error::Custom(format!(
+                        "GRF swap failed: {}; rollback failed: {}; backup is at {:?}",
+                        swap_error, rollback_error, backup_path
+                    )));
+                }
+            }
+            return Err(Error::Custom(format!("GRF swap failed: {}", swap_error)));
+        }
         if original_exists {
+            // Original can now be safely dropped. Backup removal errors are
+            // non-fatal: a retained backup prevents the next unsafe overwrite.
             let _ = std::fs::remove_file(&backup_path);
         }
 
@@ -679,6 +701,31 @@ mod tests {
         p.push(format!("beam_grf_test_{}_{}.grf", std::process::id(), name));
         let _ = std::fs::remove_file(&p);
         p
+    }
+
+    #[test]
+    fn existing_backup_is_never_overwritten_during_patch_save() {
+        // Persistent manual-recovery backup must survive even an otherwise
+        // valid patch. No external files or current game assets are touched.
+        let path = tmp_grf("existing_backup_guard");
+        let backup = path.with_extension("grf.bak");
+        let original_bytes = b"original client data";
+        let backup_bytes = b"previous recovery data";
+        let result = (|| -> Result<()> {
+            let mut grf = Grf::create_new(&path)?;
+            grf.patch_file("data/test.txt", original_bytes)?;
+            grf.save()?;
+            let before = std::fs::read(&path)?;
+            std::fs::write(&backup, backup_bytes)?;
+            grf.patch_file("data/test.txt", b"new client data")?;
+            assert!(grf.save().is_err());
+            assert_eq!(std::fs::read(&backup)?, backup_bytes);
+            assert_eq!(std::fs::read(&path)?, before);
+            Ok(())
+        })();
+        let _ = std::fs::remove_file(&backup);
+        let _ = std::fs::remove_file(&path);
+        result.unwrap();
     }
 
     #[test]
