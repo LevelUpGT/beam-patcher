@@ -20,6 +20,8 @@ import sys
 
 ROLE_FILES = {
     "turkuaz_bootstrapper": "primary/TurkuazInstaller.Bootstrapper.exe",
+    "turkuaz_winui": "primary/app/TurkuazInstaller.WinUI.exe",
+    "turkuaz_cli": "primary/cli/TurkuazInstaller.Cli.exe",
     "velopack_setup": "primary/Beam-Velopack-Setup.exe",
     "velopack_full_nupkg": "primary/Beam-full.nupkg",
     "manifest": "primary/installer-manifest.yml",
