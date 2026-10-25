@@ -2,7 +2,7 @@
 # Dosya Yolu: tools/QA-THEME-BROWSER.py
 # Amac: Dort Beam tema gorunumunu gercek Chromium uzerinde offline smoke ile dogrular
 # Modul - Python / Playwright / Visual QA
-# Version: 0.1.0-candidate
+# Version: 0.1.1-candidate
 # Aciklama: Yerel dosyalardan render; Tauri komutlari salt okunur test doubles; oyun/patch yok
 # Bagimli Oldugu Katman: beam-ui/public/index.html | assets/*.css | browser QA
 
@@ -122,9 +122,28 @@ def run(output_dir, source_sha):
             else:
                 request_route.continue_()
 
+        page_errors = []
+        page.on("pageerror", lambda err: page_errors.append(str(err)))
         page.route("**/*", route)
         page.goto(HTML.resolve().as_uri(), wait_until="domcontentloaded", timeout=30000)
-        page.wait_for_function("document.body.classList.contains('theme-ragnar-legacy')")
+        try:
+            page.wait_for_function("document.body.classList.contains('theme-ragnar-legacy')",
+                                   timeout=8000)
+        except Exception as exc:
+            state = page.evaluate("""() => ({
+                bodyClass: document.body.className,
+                isTauri: typeof window.__TAURI__ !== 'undefined',
+                calls: window.__QA_NATIVE_CALLS || [],
+                selector: document.querySelector('#theme-settings-choice')?.value,
+                applyTheme: typeof applyConfiguredTheme,
+                news: document.querySelector('#news-cards')?.textContent?.slice(0,100)
+            })""")
+            raise RuntimeError(
+                "INITIAL_THEME_NOT_READY: " + json.dumps(
+                    {"state": state, "page_errors": page_errors[:8], "blocked": blocked[:8]},
+                    ensure_ascii=True,
+                )
+            ) from exc
         page.add_style_tag(content=QA_WATERMARK)
 
         for theme in THEMES:
