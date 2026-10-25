@@ -346,8 +346,8 @@ impl Patcher {
             info!("Opening existing GRF: {:?}", path);
             Ok(Grf::open(path)?)
         } else {
-            info!("GRF not found, creating new: {:?}", path);
-            Ok(Grf::create_new(path)?)
+            info!("GRF not found, staging new GRF (no disk write): {:?}", path);
+            Ok(Grf::staging_new(path))
         }
     }
 }
