@@ -134,6 +134,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $setup = Join-Path $out 'LevelUpGames-Beam-NSIS-BACKUP-QA-Setup.exe'
           if (-not (Test-Path $setup)) { throw 'NSIS backup output missing' }
+          $installed = Join-Path $env:LOCALAPPDATA 'Programs/LevelUpGT/Beam Patcher QA-NSIS-Backup'
+          $p = Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw 'NSIS backup install failed' }
+          $exeInstalled = Join-Path $installed 'beam-patcher.exe'
+          $qaConfig = Join-Path $installed 'config.yml'
+          if (-not (Test-Path $exeInstalled) -or -not (Test-Path $qaConfig)) { throw 'NSIS backup incomplete' }
+          if (-not (Get-Content -LiteralPath $qaConfig -Raw).Contains('qa_only: true')) { throw 'Unsafe NSIS profile' }
+          $uninstall = Join-Path $installed 'Uninstall-NSIS-Backup.exe'
+          $q = Start-Process -FilePath $uninstall -ArgumentList '/S' -PassThru -Wait
+          if ($q.ExitCode -ne 0 -or (Test-Path $exeInstalled)) { throw 'NSIS backup uninstall failed' }
+          Write-Output 'BURAK-INS-001_PRIVATE_NSIS_INSTALL_UNINSTALL_OK'
           # No NSIS artifacts are uploaded or released from this job.
       - name: Verify trusted Turkuaz signing, detached manifest and native E2E proof
         shell: pwsh
@@ -153,15 +164,19 @@ jobs:
             if (-not (Test-Path -LiteralPath $src -PathType Leaf)) { throw "Required signed evidence missing: $item" }
             Copy-Item -LiteralPath $src -Destination (Join-Path $primary $item)
           }
-          # Production signed binaries must be installed by the trusted signer;
-          # an unsigned bootstrapper built above cannot be distributed.
-          $signedBootstrap = Join-Path $trusted 'TurkuazInstaller.Bootstrapper.exe'
-          if (-not (Test-Path -LiteralPath $signedBootstrap)) { throw 'Signed Turkuaz bootstrapper missing' }
-          Copy-Item -LiteralPath $signedBootstrap -Destination (Join-Path $primary 'TurkuazInstaller.Bootstrapper.exe') -Force
-          $sig = Get-AuthenticodeSignature -LiteralPath (Join-Path $primary 'TurkuazInstaller.Bootstrapper.exe')
-          if ($sig.Status -ne 'Valid' -or $null -eq $sig.SignerCertificate) { throw "Turkuaz Authenticode invalid: $($sig.Status)" }
-          # Full CMS signed manifest and external certificate pin verification
-          # belongs to TurkuazInstaller CLI trusted runtime acceptance.
+          # The protected signing job must provide the entire signed
+          # Turkuaz combined distribution; unsigned source build never passes.
+          foreach ($rel in @('TurkuazInstaller.Bootstrapper.exe','app/TurkuazInstaller.WinUI.exe','cli/TurkuazInstaller.Cli.exe')) {
+            $signedExe = Join-Path $trusted $rel
+            if (-not (Test-Path -LiteralPath $signedExe -PathType Leaf)) { throw "Signed Turkuaz runtime missing: $rel" }
+            Copy-Item -LiteralPath $signedExe -Destination (Join-Path $primary $rel) -Force
+          }
+          $pin = "${{ vars.BEAM_TURKUAZ_CERT_SHA256 }}"
+          $publisher = "${{ vars.BEAM_TURKUAZ_PUBLISHER_SUBJECT }}"
+          & ./tools/Confirm-TurkuazTrust.ps1 -PrimaryDirectory $primary -PublisherSubject $publisher -CertificateSha256 $pin
+          if ($LASTEXITCODE -ne 0) { throw 'Real CMS/Authenticode trust verification failed' }
+          # A signed-provenance E2E run must be validated in addition to
+          # this cryptographic check; JSON cannot alone approve a release.
           $evidence = Join-Path $trusted 'dual-e2e.json'
           Copy-Item -LiteralPath $evidence -Destination (Join-Path (Get-Location).Path 'build/dual-evidence.json')
       - name: Fail-closed exact hash/role/E2E gate
