@@ -2,7 +2,7 @@
 # Dosya Yolu: tools/tests/test_levelup_modern_theme.py
 # Amac: LevelUp Modern tema degistirme ve offline QA guvenlik kontratini dogrular
 # Modul - Python unittest / Node source behavior QA
-# Version: 0.3.0-candidate
+# Version: 0.3.1-candidate
 # Aciklama: CSS tema scope, browser-only preview, local preference ve native setup sinirlari
 # Bagimli Oldugu Katman: beam-ui/public/index.html | assets/levelup-modern.css
 
@@ -27,6 +27,7 @@ class LevelupModernThemeTests(unittest.TestCase):
         self.assertEqual(HTML.count('data-launcher-theme="'), 4)
         self.assertIn("option.setAttribute('aria-pressed',", HTML)
         self.assertIn('class="theme-gallery" role="group"', HTML)
+        self.assertIn(".modern-nav, .modern-hero, .classic-ad-rail { display: none; }", HTML)
         self.assertIn('href="assets/levelup-modern.css" disabled>', HTML)
         self.assertIn("if (modernSheet) modernSheet.disabled = !modern", HTML)
         self.assertIn("const isThemePreview = previewTheme || previewClassic || previewModern;", HTML)
