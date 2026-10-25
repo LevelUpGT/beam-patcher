@@ -352,7 +352,7 @@ mod tests {
         let mut config = Config::default();
         config.patcher.verify_checksums = true;
         let downloader = Downloader::new(config).unwrap();
-        let good = format!("first.beam {} 8\\n", "a".repeat(64));
+        let good = format!("first.beam {} 8\n", "a".repeat(64));
         assert_eq!(downloader.parse_patch_list(&good).unwrap().len(), 1);
 
         for bad in [
@@ -362,12 +362,12 @@ mod tests {
             "bad/escape.beam".to_string(),
             "wrong.exe".to_string(),
         ] {
-            assert!(downloader.parse_patch_list(&format!("{} {}\\n", bad, "a".repeat(64))).is_err());
+            assert!(downloader.parse_patch_list(&format!("{} {}\n", bad, "a".repeat(64))).is_err());
         }
-        assert!(downloader.parse_patch_list("missing.beam\\n").is_err());
-        assert!(downloader.parse_patch_list("invalid.beam short\\n").is_err());
+        assert!(downloader.parse_patch_list("missing.beam\n").is_err());
+        assert!(downloader.parse_patch_list("invalid.beam short\n").is_err());
         assert!(downloader.parse_patch_list(&format!(
-            "FIRST.beam {}\\nfirst.beam {}\\n", "a".repeat(64), "b".repeat(64)
+            "FIRST.beam {}\nfirst.beam {}\n", "a".repeat(64), "b".repeat(64)
         )).is_err());
     }
 
