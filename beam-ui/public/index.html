@@ -1078,10 +1078,48 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        /* Visual settings only: no update-feed or executable controls. */
+        .theme-settings[hidden] { display: none !important; }
+        .theme-settings {
+            position: fixed; inset: 0; z-index: 4000;
+            background: rgba(4, 10, 26, .78);
+            display: flex; align-items: center; justify-content: center;
+            padding: 20px; color: #f5f8ff;
+        }
+        .theme-settings-panel {
+            width: min(440px, 100%); max-height: calc(100vh - 40px);
+            overflow-y: auto; padding: 24px;
+            background: linear-gradient(145deg, #101c32, #091324);
+            border: 1px solid rgba(137, 174, 231, .42);
+            border-radius: 18px; box-shadow: 0 24px 80px rgba(0, 0, 0, .7);
+        }
+        .theme-settings-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+        .theme-settings h2 { font-size: 20px; margin: 0; }
+        .theme-settings-description { font-size: 12px; color: #b9c9e2; line-height: 1.6; margin: 12px 0 20px; }
+        .theme-settings label { font-size: 13px; font-weight: 700; display: block; margin-bottom: 8px; }
+        .theme-settings select {
+            width: 100%; padding: 12px; color: #f8fbff;
+            background: #172942; border: 1px solid #688bb5; border-radius: 8px;
+            font-size: 14px; cursor: pointer;
+        }
+        .theme-settings select:focus-visible, .theme-settings button:focus-visible {
+            outline: 3px solid #71d4ff; outline-offset: 3px;
+        }
+        .theme-settings button {
+            color: #ecf5ff; border: 1px solid rgba(141, 166, 200, .52);
+            background: #233653; padding: 10px 14px; border-radius: 9px;
+            cursor: pointer; font-weight: 600;
+        }
+        .theme-settings button:disabled { opacity: .45; cursor: not-allowed; }
+        .theme-settings-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+        .theme-settings-status { font-size: 12px; color: #9ce4dc; min-height: 18px; margin-top: 10px; }
+        .theme-settings-close { flex-shrink: 0; }
     </style>
     <!-- Explicit opt-in only: preserves the existing Beam appearance by default. -->
     <link id="ragnar-legacy-theme-css" rel="stylesheet" href="assets/ragnar-legacy.css" disabled>
     <link id="ragnar-classic-theme-css" rel="stylesheet" href="assets/ragnar-classic.css" disabled>
+    <link id="levelup-modern-theme-css" rel="stylesheet" href="assets/levelup-modern.css" disabled>
 </head>
 <body>
     <video id="video-background" autoplay loop muted playsinline></video>
@@ -1102,6 +1140,11 @@
                     <span class="logo-text" id="logo-text">GOATMMO</span>
                 </div>
             </div>
+            <nav class="modern-nav" aria-label="Launcher navigation">
+                <button type="button" onclick="filterNews('event')">Haberler</button>
+                <button type="button" onclick="filterNews('promo')">Kampanyalar</button>
+                <button type="button" onclick="openThemeSettings()">Ayarlar</button>
+            </nav>
             <div class="window-controls">
                 <button class="window-btn" onclick="minimizeWindow()" title="Minimize">
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10" stroke="currentColor" stroke-width="2"/></svg>
@@ -1117,6 +1160,14 @@
             <div class="content-panel">
                 <!-- Top Grid -->
                 <div class="top-grid">
+                    <!-- CSS-only LevelUp Modern hero; no third-party or fake in-game artwork. -->
+                    <section class="modern-hero" aria-label="LevelUp Games">
+                        <div class="modern-hero-content">
+                            <span class="modern-hero-eyebrow">LEVELUP GAMES · CLASSIC</span>
+                            <h1>RAGNAROK<br>ONLINE</h1>
+                            <p>Yeni bir macera seni bekliyor.</p>
+                        </div>
+                    </section>
                     <!-- Visible only in the screenshot-inspired Ragnar Classic theme. -->
                     <aside class="classic-ad-rail" aria-label="Classic Ragnar highlights">
                         <div class="classic-ad-card classic-ad-card--care">
@@ -1188,7 +1239,7 @@
                         <div class="button-row">
                             <button class="btn-play-now" id="play-button" onclick="handlePlayButton()">Play Now</button>
                             <button class="btn-register" id="register-btn-main" title="Register">Register</button>
-                            <button class="btn-action-small" onclick="openSetup()" title="Settings"><i class="ph ph-gear"></i></button>
+                            <button class="btn-action-small" id="theme-settings-open" onclick="openThemeSettings()" title="Görünüm ve oyun ayarları" aria-label="Görünüm ve oyun ayarları"><i class="ph ph-gear"></i></button>
                             <button class="btn-action-small" onclick="manualPatch()" title="Manual Patch"><i class="ph ph-folder-open"></i></button>
                             <button class="btn-action-small" onclick="resetCache()" title="Reset Cache"><i class="ph ph-arrow-clockwise"></i></button>
                             <div class="social-buttons-inline" id="social-buttons-container"></div>
@@ -1201,6 +1252,29 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Individual preference lives in WebView storage; deployment config is read-only. -->
+    <div class="theme-settings" id="theme-settings-modal" role="dialog" aria-modal="true" aria-labelledby="theme-settings-title" hidden onclick="if (event.target === this) closeThemeSettings()">
+        <div class="theme-settings-panel">
+            <div class="theme-settings-header">
+                <h2 id="theme-settings-title">Görünüm ve Ayarlar</h2>
+                <button type="button" class="theme-settings-close" onclick="closeThemeSettings()" aria-label="Kapat">✕</button>
+            </div>
+            <p class="theme-settings-description">Temayı anında değiştir. Tercihin yalnızca bu cihazın launcher görünümüne uygulanır; oyun ve güncelleme dosyalarını değiştirmez.</p>
+            <label for="theme-settings-choice">Tema seç</label>
+            <select id="theme-settings-choice" onchange="chooseLauncherTheme(this.value)">
+                <option value="default">Beam Varsayılan</option>
+                <option value="ragnar-legacy">Ragnar Legacy</option>
+                <option value="ragnar-classic">Ragnar Classic</option>
+                <option value="levelup-modern">LevelUp Modern</option>
+            </select>
+            <p class="theme-settings-status" id="theme-settings-status" role="status" aria-live="polite"></p>
+            <div class="theme-settings-actions">
+                <button type="button" id="theme-game-setup" onclick="openGameSetupFromSettings()">Oyun Ayarları</button>
+                <button type="button" onclick="closeThemeSettings()">Kapat</button>
             </div>
         </div>
     </div>
@@ -1218,6 +1292,7 @@
 
 
     <script>
+        // LevelUp visual settings: per-device preference, not patcher config.
         // Check if running in Tauri or browser
         const isTauri = typeof window.__TAURI__ !== 'undefined';
         // Browser-only QA: file:///.../index.html?theme=ragnar-legacy
@@ -1226,30 +1301,93 @@
             new URLSearchParams(window.location.search).get('theme') === 'ragnar-legacy';
         const previewClassic = !isTauri &&
             new URLSearchParams(window.location.search).get('theme') === 'ragnar-classic';
-        const isThemePreview = previewTheme || previewClassic;
+        const previewModern = !isTauri &&
+            new URLSearchParams(window.location.search).get('theme') === 'levelup-modern';
+        const isThemePreview = previewTheme || previewClassic || previewModern;
+        const allowedLauncherThemes = Object.freeze([
+            'default', 'ragnar-legacy', 'ragnar-classic', 'levelup-modern'
+        ]);
+        const themePreferenceKey = 'beam.launcher.theme.v1';
+        let lastLoadedConfig = null;
+        let activeLauncherTheme = 'default';
+        let lastThemeSettingsTrigger = null;
 
-        function applyConfiguredTheme(config) {
-            // The browser-only query is never honored by a real Tauri app.
-            const choice = previewClassic ? 'ragnar-classic' :
-                (previewTheme ? 'ragnar-legacy' : (config?.ui?.theme || 'default'));
+        function safeStoredTheme() {
+            try {
+                const saved = window.localStorage.getItem(themePreferenceKey);
+                return allowedLauncherThemes.includes(saved) ? saved : null;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function applyConfiguredTheme(config, explicitTheme = null) {
+            // URL parameters only select the first browser preview. In Tauri,
+            // an explicit local preference overrides the deployment's UI theme.
+            const previewChoice = previewModern ? 'levelup-modern' :
+                (previewClassic ? 'ragnar-classic' : (previewTheme ? 'ragnar-legacy' : null));
+            const requested = explicitTheme || previewChoice || safeStoredTheme() ||
+                (config?.ui?.theme || 'default');
+            const choice = allowedLauncherThemes.includes(requested) ? requested : 'default';
+            activeLauncherTheme = choice;
             const legacy = choice === 'ragnar-legacy';
             const classic = choice === 'ragnar-classic';
+            const modern = choice === 'levelup-modern';
             const sheet = document.getElementById('ragnar-legacy-theme-css');
             const classicSheet = document.getElementById('ragnar-classic-theme-css');
+            const modernSheet = document.getElementById('levelup-modern-theme-css');
             if (sheet) sheet.disabled = !legacy;
             if (classicSheet) classicSheet.disabled = !classic;
+            if (modernSheet) modernSheet.disabled = !modern;
             document.body.classList.toggle('theme-ragnar-legacy', legacy);
             document.body.classList.toggle('theme-ragnar-classic', classic);
+            document.body.classList.toggle('theme-levelup-modern', modern);
             document.body.classList.toggle('theme-preview-only', isThemePreview);
+            document.getElementById('theme-settings-choice').value = choice;
             if (isThemePreview) {
-                // Do not simulate game launch, manual patch or cache writes.
+                // Preview still permits its visual settings; patch/game remain blocked.
                 for (const button of document.querySelectorAll(
                     '#play-button, .btn-action-small, #register-btn-main'
-                )) button.disabled = true;
+                )) {
+                    if (button.id !== 'theme-settings-open') button.disabled = true;
+                }
+                document.getElementById('theme-game-setup').disabled = true;
                 document.getElementById('progress-label').textContent =
-                    'Classic Ragnar theme preview - no patches or game launches';
+                    'Offline theme preview - no patches or game launches';
                 document.getElementById('play-button').textContent = 'Preview Only';
             }
+        }
+
+        function openThemeSettings() {
+            lastThemeSettingsTrigger = document.activeElement;
+            document.getElementById('theme-settings-modal').hidden = false;
+            document.getElementById('theme-settings-status').textContent = '';
+            document.getElementById('theme-settings-choice').focus();
+        }
+
+        function closeThemeSettings() {
+            document.getElementById('theme-settings-modal').hidden = true;
+            if (lastThemeSettingsTrigger && typeof lastThemeSettingsTrigger.focus === 'function') {
+                lastThemeSettingsTrigger.focus();
+            }
+        }
+
+        function chooseLauncherTheme(theme) {
+            if (!allowedLauncherThemes.includes(theme)) return;
+            applyConfiguredTheme(lastLoadedConfig, theme);
+            const status = document.getElementById('theme-settings-status');
+            try {
+                window.localStorage.setItem(themePreferenceKey, theme);
+                status.textContent = 'Tema kaydedildi.';
+            } catch (_) {
+                status.textContent = 'Tema uygulandı ancak bu cihazda kaydedilemedi.';
+            }
+        }
+
+        async function openGameSetupFromSettings() {
+            if (isThemePreview) return;
+            closeThemeSettings();
+            await openSetup(); // Preserve the existing native game setup action.
         }
         
         // Mock Tauri API for browser testing
@@ -1258,6 +1396,10 @@
             : async (cmd, args) => {
                 console.log('Mock invoke:', cmd, args);
                 if (cmd === 'get_news') {
+                    if (previewModern) return [
+                        { id: 201, category: 'event', title: 'LevelUp Games - Tema Önizlemesi', url: 'about:blank' },
+                        { id: 202, category: 'event', title: 'Ragnarok Online Classic - Görsel Demo', url: 'about:blank' }
+                    ];
                     if (previewClassic) return [
                         { id: 101, category: 'event', title: 'Ragnar Ragnarok Online - Welcome', url: 'about:blank' },
                         { id: 102, category: 'event', title: 'Overlook Dungeon - Classic Event', url: 'about:blank' },
@@ -1286,7 +1428,7 @@
                             grid_images: null,
                             social_links: []
                         },
-                        ui: { theme: previewClassic ? 'ragnar-classic' : (previewTheme ? 'ragnar-legacy' : 'default'), status_image_url: null }
+                        ui: { theme: previewModern ? 'levelup-modern' : (previewClassic ? 'ragnar-classic' : (previewTheme ? 'ragnar-legacy' : 'default')), status_image_url: null }
                     };
                 }
                 return null;
@@ -1547,6 +1689,7 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 closeImageModal();
+                if (!document.getElementById('theme-settings-modal').hidden) closeThemeSettings();
             }
         });
 
@@ -1695,6 +1838,11 @@
         }
 
         async function loadImageGrid(config) {
+            // Keep QA self-contained and avoid default third-party placeholders for Modern.
+            if (previewModern || (activeLauncherTheme === 'levelup-modern' &&
+                !(config.app && config.app.grid_images && config.app.grid_images.length))) {
+                return;
+            }
             // Default placeholder images
             const defaultImages = [
                 'https://images.unsplash.com/photo-1511512578047-dfb367046420?w=400&h=400&fit=crop',
@@ -1816,6 +1964,7 @@
                 config = await promptGameDirectorySelection();
             }
             
+            lastLoadedConfig = config;
             applyConfiguredTheme(config);
             if (config.app.server_name) {
                 document.getElementById('logo-text').textContent = config.app.server_name;
