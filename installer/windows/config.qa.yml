@@ -16,7 +16,11 @@ app:
   server_name: "LEVELUP GAMES (QA)"
   video_background_enabled: false
   video_background_file: null
-  grid_images: []
+  grid_images:
+    - "assets/1.png"
+    - "assets/2.png"
+    - "assets/3.png"
+    - "assets/4.png"
   limited_items: []
   social_links: []
   discord_url: null
