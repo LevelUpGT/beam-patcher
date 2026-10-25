@@ -35,6 +35,11 @@ on:
 permissions:
   contents: read
 
+# Keep only the latest branch/PR build; never waste runners on superseded QA.
+concurrency:
+  group: beam-windows-setup-qa-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows-qa-installer:
     name: Windows x64 Rust BEAM E2E and installer
