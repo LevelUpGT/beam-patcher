@@ -1,7 +1,7 @@
 # Dosya Yolu: .github/workflows/ragnar-legacy-theme-qa.yml
 # Amac: Ragnar classic Beam theme CSS/config/JS contract QA
 # Modul - GitHub Actions YAML
-# Version: 0.3.0-candidate
+# Version: 0.3.1-candidate
 # Aciklama: Offline source check only, no game files/patcher binary/release.
 # Bagimli Oldugu Katman: tools/tests/test_ragnar_legacy_theme.py | beam-ui/public/index.html
 name: Ragnar Legacy and Classic Themes Offline QA
@@ -85,10 +85,10 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install pinned Playwright and Chromium
+      - name: Install pinned Playwright (use hosted Chrome)
         run: |
           python -m pip install --disable-pip-version-check --no-cache-dir playwright==1.56.0
-          python -m playwright install --with-deps chromium
+          google-chrome --version
       - name: Render all four themes and verify restart persistence (offline mocked Tauri)
         run: |
           python tools/QA-THEME-BROWSER.py --output-dir build/theme-visual-qa --source-sha "${{ github.sha }}"
