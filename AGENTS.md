@@ -25,6 +25,24 @@ Bagimli Oldugu Katman: Documentation
 - Trusted self-hosted runner'a untrusted fork PR kodu gonderme. Baska repo kapsaminda izinsiz islem yapma.
 - Merkezi repo private olabilir: dis katilimci erisemese bile bu ozet baglayicidir, okunmamis merkezi dokumana atifla gercek disi uyum iddia etme.
 
+## BURAK-INS-001 — Windows installer dagitim kilidi
+
+- Windows kurulum paketlerinin birincili TurkuazInstaller Community; zorunlu
+  yedegi NSIS'tir. Ikisi ayni SHA/surumde tek gated workflow'da uretilir.
+- **Kullaniciya sadece dogrulanmis Turkuaz setup dosyalarinin baglantisi
+  verilir.** NSIS private recovery disinda yayinlanmaz. Inno ve tekli
+  NSIS/QA setup artifacti indirme baglantisi verilmez.
+- Imzali Turkuaz manifest + detached .p7s + harici cert pin, Velopack
+  tam paket, native install/update/repair/rollback/uninstall ve NSIS smoke
+  onayi olmadan hicbir setup "hazir" sayilmaz. FAIL/CLOSED, NSIS fallback yok.
+- CI enforce: `tools/check_installer_workflows.py`,
+  `tools/verify_installer_pair.py`,
+  `.github/workflows/dual-installer-policy.yml`.
+- Merkezi standart degisikligi ayrica
+  `TurkuazSoft/DevStandards#19` icinde **Draft**; merge edilmedikce
+  aktif merkezi commit degistirilmis gibi ifade etme. Yerel Beam kurali
+  ise bu branch icin baglayicidir.
+
 ## Proje odak noktasi
 
 Rust Cargo and update/checksum/security policy, rollback and patchlist parsing tests; binary packaging and release separate.
