@@ -2,7 +2,7 @@
 Dosya Yolu: themes/levelup-modern/README.md
 Amac: LevelUp Modern Beam temasi gorunumu, secim akisi ve guvenli QA sinirlari
 Modul - Markdown Theme Documentation
-Version: 0.1.0-candidate
+Version: 0.2.0-candidate
 Aciklama: Bagimsiz secilebilir gorunume dair kaynak ve browser kontrol rehberi
 Bagimli Oldugu Katman: beam-ui/public/index.html | assets/levelup-modern.css
 -->
@@ -43,6 +43,35 @@ unchanged. A separate **Oyun Ayarlari** button retains the existing
 A clean profile without a saved preference continues to respect the
 deployment's original `ui.theme` value. Device-local storage can be cleared
 by the OS/WebView profile reset; it is **not** synced between computers.
+
+## Visual theme gallery
+
+The Settings dialog now shows four color previews (swatch cards) with the
+same options as the accessible select element. The selected card exposes
+`aria-pressed=true`. Choosing a card updates the actual Beam layout immediately
+and saves the local preference. **Oyun Ayarlari** still calls the original
+native `open_setup` command; theme choice never changes patch settings.
+
+## Repeatable browser screenshot QA
+
+The `chromium-theme-smoke` GitHub Actions job uses pinned Playwright/Chromium
+to open the **real** `beam-ui/public/index.html` at a 900x620 viewport.
+It supplies inert local Tauri command doubles, verifies each clickable theme
+card, checks preference restoration after page reload, and uploads four
+short-lived PNG screenshots plus a SHA-256 evidence report.
+
+```powershell
+python -m pip install playwright==1.56.0
+python -m playwright install chromium
+python tools/QA-THEME-BROWSER.py --output-dir build/theme-visual-qa
+```
+
+The command is repo-root independent; the script resolves its own location.
+Its output directory must be empty; previous QA proof is never overwritten.
+The browser blocks outgoing HTTP requests, and no real update/game command
+is allowed. This is **Chromium browser QA**, not Windows WebView2 or native
+Tauri GUI acceptance. Images are available as a temporary Actions artifact;
+no release is created.
 
 ## Offline read-only preview
 
