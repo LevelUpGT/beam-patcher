@@ -2,7 +2,7 @@
 # Dosya Yolu: tools/tests/test_levelup_modern_theme.py
 # Amac: LevelUp Modern tema degistirme ve offline QA guvenlik kontratini dogrular
 # Modul - Python unittest / Node source behavior QA
-# Version: 0.1.0-candidate
+# Version: 0.2.0-candidate
 # Aciklama: CSS tema scope, browser-only preview, local preference ve native setup sinirlari
 # Bagimli Oldugu Katman: beam-ui/public/index.html | assets/levelup-modern.css
 
@@ -23,6 +23,9 @@ class LevelupModernThemeTests(unittest.TestCase):
         for name in ("default", "ragnar-legacy", "ragnar-classic", "levelup-modern"):
             self.assertIn(f'<option value="{name}">', HTML)
         self.assertIn('id="levelup-modern-theme-css"', HTML)
+        self.assertEqual(HTML.count('data-launcher-theme="'), 4)
+        self.assertIn("option.setAttribute('aria-pressed',", HTML)
+        self.assertIn('class="theme-gallery" role="group"', HTML)
         self.assertIn('href="assets/levelup-modern.css" disabled>', HTML)
         self.assertIn("if (modernSheet) modernSheet.disabled = !modern", HTML)
         self.assertIn("const isThemePreview = previewTheme || previewClassic || previewModern;", HTML)
@@ -48,7 +51,7 @@ class LevelupModernThemeTests(unittest.TestCase):
         self.assertIn("Offline theme preview - no patches or game launches", HTML)
         self.assertIn("if (previewModern) return [", HTML)
         self.assertIn("url: 'about:blank'", HTML)
-        self.assertIn("if (previewModern || (activeLauncherTheme === 'levelup-modern'", HTML)
+        self.assertIn("if (isThemePreview || (activeLauncherTheme === 'levelup-modern'", HTML)
 
     def test_styles_are_scoped_and_have_no_external_asset_requests(self):
         self.assertIn("body.theme-levelup-modern .modern-hero", CSS)
@@ -85,16 +88,23 @@ function scenario(tauri, query, preference) {
     const nodes = new Map();
     function node(id) {
         if (!nodes.has(id)) nodes.set(id, {id, disabled: false, hidden: true,
-            value: '', textContent: '', focus() {}});
+            value: '', textContent: '', dataset: {},
+            attributes: {}, setAttribute(key, value) {this.attributes[key] = value;},
+            focus() {}});
         return nodes.get(id);
     }
     const buttons = [node('play-button'), node('theme-settings-open'),
         node('manual-patch-button'), node('register-btn-main')];
+    const gallery = ['default', 'ragnar-legacy', 'ragnar-classic', 'levelup-modern']
+        .map(theme => {const element = node('choice-' + theme);
+            element.dataset.launcherTheme = theme; return element;});
     const classes = {};
     const store = new Map(preference ? [['beam.launcher.theme.v1', preference]] : []);
     const doc = {activeElement: node('theme-settings-open'),
         body: {classList: {toggle(k,v) {classes[k] = v;}}},
-        getElementById: node, querySelectorAll() {return buttons;}};
+        getElementById: node, querySelectorAll(selector) {
+            return selector === '[data-launcher-theme]' ? gallery : buttons;
+        }};
     const window = {location: {search: query}, localStorage: {
         getItem(k) {return store.get(k) ?? null;},
         setItem(k,v) {store.set(k,v);}
@@ -108,6 +118,7 @@ let q = scenario(false, '?theme=levelup-modern', 'ragnar-legacy');
 vm.runInContext("lastLoadedConfig = {ui:{theme:'ragnar-classic'}}; applyConfiguredTheme(lastLoadedConfig)", q.context);
 assert.equal(q.classes['theme-levelup-modern'], true);
 assert.equal(q.node('levelup-modern-theme-css').disabled, false);
+assert.equal(q.node('choice-levelup-modern').attributes['aria-pressed'], 'true');
 assert.equal(q.node('ragnar-classic-theme-css').disabled, true);
 assert.equal(q.node('play-button').disabled, true);
 assert.equal(q.node('theme-settings-open').disabled, false);
@@ -115,6 +126,7 @@ assert.equal(q.node('theme-game-setup').disabled, true);
 vm.runInContext("openThemeSettings(); chooseLauncherTheme('ragnar-classic')", q.context);
 assert.equal(q.node('theme-settings-modal').hidden, false);
 assert.equal(q.classes['theme-ragnar-classic'], true);
+assert.equal(q.node('choice-ragnar-classic').attributes['aria-pressed'], 'true');
 assert.equal(q.store.get('beam.launcher.theme.v1'), 'ragnar-classic');
 vm.runInContext("chooseLauncherTheme('invalid'); closeThemeSettings()", q.context);
 assert.equal(q.store.get('beam.launcher.theme.v1'), 'ragnar-classic');
