@@ -158,7 +158,12 @@ pub struct ServerConfig {
 impl Config {
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
         let content = std::fs::read_to_string(path)?;
-        let config: Config = serde_yaml::from_str(&content)?;
+        let mut config: Config = serde_yaml::from_str(&content)?;
+        // Older QA setup packages had no qa_only field. Preserve the user's
+        // configuration, but never interpret that absence as production mode.
+        if config.app.name == crate::qa_guard::QA_APP_NAME {
+            config.patcher.qa_only = true;
+        }
         config.validate()?;
         Ok(config)
     }
@@ -170,6 +175,11 @@ impl Config {
     }
     
     pub fn validate(&self) -> Result<()> {
+        if self.app.name == crate::qa_guard::QA_APP_NAME && !self.patcher.qa_only {
+            return Err(Error::InvalidConfig(
+                "LevelUp Games QA profile cannot disable isolation".into()
+            ));
+        }
         if self.patcher.mirrors.is_empty() {
             return Err(Error::InvalidConfig("At least one mirror must be configured".to_string()));
         }
@@ -265,5 +275,36 @@ impl Config {
                 map_server_port: 5121,
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod qa_config_migration_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn legacy_qa_config_is_migrated_in_memory_without_rewriting_user_file() {
+        let mut config = Config::default();
+        config.app.name = crate::qa_guard::QA_APP_NAME.to_owned();
+        config.app.client_exe = "NO_CLIENT_CONFIGURED.exe".to_owned();
+        config.patcher.target_grf = "levelup-qa.grf".to_owned();
+        config.patcher.patch_list_url = "http://127.0.0.1:9/disabled/patchlist.txt".into();
+        config.patcher.mirrors[0].url = "http://127.0.0.1:9/disabled".into();
+        config.patcher.qa_only = false;
+        config.updater = None;
+        assert!(config.validate().is_err());
+
+        let path = std::env::temp_dir().join(format!(
+            "beam-legacy-qa-{}-{}.yml",
+            std::process::id(),
+            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        config.save(&path).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+        assert!(loaded.patcher.qa_only);
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        std::fs::remove_file(path).unwrap();
     }
 }
