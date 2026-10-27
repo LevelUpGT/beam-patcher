@@ -68,7 +68,7 @@ class TurkuazPremiumThemeTests(unittest.TestCase):
         self.assertIn("qa_only: true", PROFILE)
 
     def test_local_svg_renderer_is_allowed_in_bundled_asset_path(self):
-        self.assertRegex(HTML, r"assets\\/\[a-zA-Z0-9_.-\].+svg")
+        self.assertIn('(?:png|jpe?g|webp|gif|svg)', HTML)
         self.assertIn("img.src = new URL(imagePath, document.baseURI).href;", HTML)
         self.assertIn("img.onerror = () => {", HTML)
         self.assertIn("tile?.classList.add('is-image-missing')", HTML)
