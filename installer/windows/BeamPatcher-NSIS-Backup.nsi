@@ -15,9 +15,9 @@ SetCompressor /SOLID lzma
   !error "NsisOut must point to an explicitly created private output directory"
 !endif
 
-Name "LevelUp Games Beam QA - NSIS BACKUP ONLY"
-OutFile "${NsisOut}\LevelUpGames-Beam-NSIS-BACKUP-QA-Setup.exe"
-InstallDir "$LOCALAPPDATA\Programs\LevelUpGT\Beam Patcher QA-NSIS-Backup"
+Name "Turkuaz Ragnarok Online QA - NSIS BACKUP ONLY"
+OutFile "${NsisOut}\TurkuazRagnarokOnline-NSIS-BACKUP-QA-Setup.exe"
+InstallDir "$LOCALAPPDATA\Programs\TurkuazSoft\Turkuaz Ragnarok Online QA-NSIS-Backup"
 ShowInstDetails show
 ShowUninstDetails show
 
@@ -37,18 +37,18 @@ Section "Install NSIS backup QA" SecInstall
   SetOverwrite on
 
   WriteUninstaller "$INSTDIR\Uninstall-NSIS-Backup.exe"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LevelUpGamesBeamQaNsisBackup" "DisplayName" "LevelUp Games Beam QA (NSIS backup)"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LevelUpGamesBeamQaNsisBackup" "DisplayName" "Turkuaz Ragnarok Online QA (NSIS backup)"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LevelUpGamesBeamQaNsisBackup" "UninstallString" '"$INSTDIR\Uninstall-NSIS-Backup.exe"'
-  CreateDirectory "$SMPROGRAMS\LevelUp Games QA NSIS Backup"
-  CreateShortcut "$SMPROGRAMS\LevelUp Games QA NSIS Backup\Beam QA (Backup).lnk" "$INSTDIR\beam-patcher.exe"
-  CreateShortcut "$SMPROGRAMS\LevelUp Games QA NSIS Backup\Uninstall Backup.lnk" "$INSTDIR\Uninstall-NSIS-Backup.exe"
+  CreateDirectory "$SMPROGRAMS\Turkuaz Ragnarok Online QA NSIS Backup"
+  CreateShortcut "$SMPROGRAMS\Turkuaz Ragnarok Online QA NSIS Backup\Turkuaz RO QA (Backup).lnk" "$INSTDIR\beam-patcher.exe"
+  CreateShortcut "$SMPROGRAMS\Turkuaz Ragnarok Online QA NSIS Backup\Uninstall Backup.lnk" "$INSTDIR\Uninstall-NSIS-Backup.exe"
 SectionEnd
 
 Section "Uninstall"
   SetShellVarContext current
-  Delete "$SMPROGRAMS\LevelUp Games QA NSIS Backup\Beam QA (Backup).lnk"
-  Delete "$SMPROGRAMS\LevelUp Games QA NSIS Backup\Uninstall Backup.lnk"
-  RMDir "$SMPROGRAMS\LevelUp Games QA NSIS Backup"
+  Delete "$SMPROGRAMS\Turkuaz Ragnarok Online QA NSIS Backup\Turkuaz RO QA (Backup).lnk"
+  Delete "$SMPROGRAMS\Turkuaz Ragnarok Online QA NSIS Backup\Uninstall Backup.lnk"
+  RMDir "$SMPROGRAMS\Turkuaz Ragnarok Online QA NSIS Backup"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\LevelUpGamesBeamQaNsisBackup"
   Delete "$INSTDIR\beam-patcher.exe"
   Delete "$INSTDIR\README-QA.txt"
