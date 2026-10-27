@@ -27,7 +27,7 @@ ROLE_FILES = {
     "manifest": "primary/installer-manifest.yml",
     "manifest_detached_signature": "primary/installer-manifest.yml.p7s",
     "external_trust_policy": "primary/manifest-trust.yml",
-    "nsis_backup": "backup/LevelUpGames-Beam-NSIS-BACKUP-QA-Setup.exe",
+    "nsis_backup": "backup/TurkuazRagnarokOnline-NSIS-BACKUP-QA-Setup.exe",
 }
 REQUIRED_ACCEPTANCE = (
     "turkuaz_signed_manifest_and_trust",
