@@ -38,8 +38,8 @@ class TurkuazReferenceRestoreTests(unittest.TestCase):
             uri = images[0].attrib["href"]
             self.assertTrue(uri.startswith("data:image/jpeg;base64,"), filename)
             binary = base64.b64decode(uri.split(",", 1)[1], validate=True)
-            self.assertTrue(binary.startswith(b"\\xff\\xd8\\xff"), filename)
-            self.assertTrue(binary.endswith(b"\\xff\\xd9"), filename)
+            self.assertTrue(binary.startswith(bytes([0xff, 0xd8, 0xff])), filename)
+            self.assertTrue(binary.endswith(bytes([0xff, 0xd9])), filename)
             self.assertGreater(len(binary), 9000, filename)
             self.assertNotIn("<script", source.read_text(encoding="utf-8"))
             self.assertNotIn("<foreignObject", source.read_text(encoding="utf-8"))
