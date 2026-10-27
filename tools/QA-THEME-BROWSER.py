@@ -32,7 +32,7 @@ MOCK_TAURI = r"""
   window.__QA_NATIVE_CALLS = calls;
   const config = {
     app: {
-      server_name: "LEVELUP GAMES / OFFLINE QA",
+      server_name: "TURKUAZ RAGNAROK ONLINE / OFFLINE QA",
       version: "0.1.0-qa",
       bgm_autoplay: false,
       video_background_enabled: false,
@@ -54,7 +54,7 @@ MOCK_TAURI = r"""
           case "get_config": return config;
           case "check_initial_setup": return false;
           case "get_news": return [
-            { id: 1, title: "LevelUp Games - offline QA", category: "event", url: "about:blank" },
+            { id: 1, title: "Turkuaz Ragnarok Online - offline QA", category: "event", url: "about:blank" },
             { id: 2, title: "Gorunum temalari", category: "event", url: "about:blank" }
           ];
           case "get_server_status":

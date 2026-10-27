@@ -4,7 +4,7 @@
 # Version: 0.3.1-candidate
 # Aciklama: Offline source check only, no game files/patcher binary/release.
 # Bagimli Oldugu Katman: tools/tests/test_ragnar_legacy_theme.py | beam-ui/public/index.html
-name: Ragnar Legacy and Classic Themes Offline QA
+name: Turkuaz Ragnarok Online Launcher Theme QA
 
 on:
   push:
@@ -19,6 +19,7 @@ on:
       - "themes/README.md"
       - "tools/tests/test_ragnar_classic_theme.py"
       - "tools/tests/test_levelup_modern_theme.py"
+      - "tools/tests/test_turkuaz_branding.py"
       - "tools/QA-THEME-BROWSER.py"
       - "themes/ragnar-legacy/**"
       - "tools/tests/test_ragnar_legacy_theme.py"
@@ -34,6 +35,7 @@ on:
       - "themes/README.md"
       - "tools/tests/test_ragnar_classic_theme.py"
       - "tools/tests/test_levelup_modern_theme.py"
+      - "tools/tests/test_turkuaz_branding.py"
       - "tools/QA-THEME-BROWSER.py"
       - "themes/ragnar-legacy/**"
       - "tools/tests/test_ragnar_legacy_theme.py"
@@ -55,8 +57,10 @@ jobs:
         run: python3 -B -m unittest discover -s tools/tests -p 'test_ragnar_legacy_theme.py' -v
       - name: Seven screenshot-based classic launcher UI layout and safety contracts
         run: python3 -B -m unittest discover -s tools/tests -p 'test_ragnar_classic_theme.py' -v
-      - name: LevelUp Modern preference, settings, and offline visual QA
+      - name: Turkuaz Modern preference, settings, and offline visual QA
         run: python3 -B -m unittest discover -s tools/tests -p 'test_levelup_modern_theme.py' -v
+      - name: Turkuaz visible branding and safe QA compatibility contract
+        run: python3 -B -m unittest discover -s tools/tests -p 'test_turkuaz_branding.py' -v
       - name: Extract inline Beam UI JavaScript for syntax validation
         shell: bash
         run: |

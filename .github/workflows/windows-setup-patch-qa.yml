@@ -95,9 +95,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path $output | Out-Null
           & $env:BEAM_NSIS_COMPILER '/V2' "/DBeamExe=$exe" "/DNsisOut=$output" 'installer/windows/BeamPatcher-NSIS-Backup.nsi'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $setup = Join-Path $output 'LevelUpGames-Beam-NSIS-BACKUP-QA-Setup.exe'
+          $setup = Join-Path $output 'TurkuazRagnarokOnline-NSIS-BACKUP-QA-Setup.exe'
           if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) { throw 'NSIS backup setup missing' }
-          $installed = Join-Path $env:LOCALAPPDATA 'Programs/LevelUpGT/Beam Patcher QA-NSIS-Backup'
+          $installed = Join-Path $env:LOCALAPPDATA 'Programs/TurkuazSoft/Turkuaz Ragnarok Online QA-NSIS-Backup'
           $process = Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
           if ($process.ExitCode -ne 0) { throw "NSIS fallback install failed $($process.ExitCode)" }
           $config = Join-Path $installed 'config.yml'

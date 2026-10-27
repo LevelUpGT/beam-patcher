@@ -7,7 +7,7 @@ Aciklama: 2022 public feed acilmadan kullanilabilen installer ve sentetik patch 
 Bagimli Oldugu Katman: .github/workflows/windows-setup-patch-qa.yml | installer/windows/BeamPatcher-QA.iss
 -->
 
-# LevelUp Games Beam - Windows Setup & Patch QA
+# Turkuaz Ragnarok Online - Windows Setup & Patch QA
 
 **Status: Candidate / NOT production.** The Windows x64 installer is deliberately
 separate from a real Ragnarok client installer. It contains the actual

@@ -88,7 +88,7 @@ jobs:
           $vpk = Join-Path $tools 'vpk.exe'
           $out = Join-Path (Get-Location).Path 'build/dual-vpk'
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          & $vpk --legacyConsole true --yes true --skip-updates true pack --runtime win-x64 --packId levelupgt.beampatcher.qa --packTitle "LevelUp Games Beam QA" --packVersion 1.0.1 --packDir $stage --mainExe beam-patcher.exe --outputDir $out --delta none --skipVeloAppCheck true
+          & $vpk --legacyConsole true --yes true --skip-updates true pack --runtime win-x64 --packId levelupgt.beampatcher.qa --packTitle "Turkuaz Ragnarok Online QA" --packVersion 1.0.1 --packDir $stage --mainExe beam-patcher.exe --outputDir $out --delta none --skipVeloAppCheck true
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $setup = Get-ChildItem -LiteralPath $out -Filter '*Setup.exe' | Select-Object -First 1
           $nupkg = Get-ChildItem -LiteralPath $out -Filter '*-full.nupkg' | Select-Object -First 1
@@ -132,9 +132,9 @@ jobs:
           $exe = (Resolve-Path target/release/beam-patcher.exe).Path
           & $nsis '/V2' "/DBeamExe=$exe" "/DNsisOut=$out" 'installer/windows/BeamPatcher-NSIS-Backup.nsi'
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $setup = Join-Path $out 'LevelUpGames-Beam-NSIS-BACKUP-QA-Setup.exe'
+          $setup = Join-Path $out 'TurkuazRagnarokOnline-NSIS-BACKUP-QA-Setup.exe'
           if (-not (Test-Path $setup)) { throw 'NSIS backup output missing' }
-          $installed = Join-Path $env:LOCALAPPDATA 'Programs/LevelUpGT/Beam Patcher QA-NSIS-Backup'
+          $installed = Join-Path $env:LOCALAPPDATA 'Programs/TurkuazSoft/Turkuaz Ragnarok Online QA-NSIS-Backup'
           $p = Start-Process -FilePath $setup -ArgumentList '/S' -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw 'NSIS backup install failed' }
           $exeInstalled = Join-Path $installed 'beam-patcher.exe'
