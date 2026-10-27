@@ -17,6 +17,11 @@ ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "beam-ui/public/assets"
 HTML = (ROOT / "beam-ui/public/index.html").read_text(encoding="utf-8")
 CSS = (ASSETS / "turkuaz-reference-restore.css").read_text(encoding="utf-8")
+PINNED_REFERENCE_SHA256 = {
+    "turkuaz-user-classic-header.svg": "1081e5035790de6d3816785bbf7f742422d828abf22912ebaea90c35f5e3a2c7",
+    "turkuaz-user-classic-castle.svg": "333a8c8991f5e2de617f36e0bb6680196df5fab4c7886649514a8ce8603ce972",
+    "turkuaz-user-modern-hero.svg": "2523c878fa289139d81bc5458d82c35118ddeed48f74153eb3af94940152bef3",
+}
 EXPECTED = (
     ("classic-header", "turkuaz-user-classic-header.svg"),
     ("classic-castle", "turkuaz-user-classic-castle.svg"),
@@ -43,7 +48,9 @@ class TurkuazReferenceRestoreTests(unittest.TestCase):
             self.assertGreater(len(binary), 9000, filename)
             self.assertNotIn("<script", source.read_text(encoding="utf-8"))
             self.assertNotIn("<foreignObject", source.read_text(encoding="utf-8"))
-            hashes.append(hashlib.sha256(binary).hexdigest())
+            actual_digest = hashlib.sha256(binary).hexdigest()
+            self.assertEqual(actual_digest, PINNED_REFERENCE_SHA256[filename], "Do not silently replace supplied artwork")
+            hashes.append(actual_digest)
             self.assertIn(filename, CSS)
         self.assertEqual(len(hashes), len(set(hashes)), "No repeated placeholders")
 
