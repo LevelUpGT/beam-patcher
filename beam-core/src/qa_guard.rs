@@ -15,7 +15,7 @@ pub(crate) const QA_APP_NAME: &str = "Turkuaz Ragnarok Online QA";
 pub(crate) const LEGACY_QA_APP_NAME: &str = "LevelUp Games Beam QA";
 
 pub(crate) fn is_qa_app_name(name: &str) -> bool {
-    matches!(name, QA_APP_NAME | LEGACY_QA_APP_NAME)
+    name == QA_APP_NAME || name == LEGACY_QA_APP_NAME
 }
 const QA_GRF: &str = "levelup-qa.grf";
 
