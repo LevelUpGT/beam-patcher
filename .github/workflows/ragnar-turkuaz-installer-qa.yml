@@ -1,7 +1,7 @@
 # Dosya Yolu: .github/workflows/ragnar-turkuaz-installer-qa.yml
 # Amac: Ragnar Classic read-only preview icin TurkuazInstaller Community kullanarak Windows QA paketi uretmek
 # Modul - GitHub Actions Windows QA YAML
-# Version: 0.5.0-qa
+# Version: 0.5.1-qa
 # Aciklama: Preview-only Rust + Velopack + pinned TurkuazInstaller WinUI/CLI; ephemeral local trust, no release
 # Bagimli Oldugu Katman: Rust preview-only | TurkuazInstaller Community | Velopack
 
@@ -45,7 +45,7 @@ jobs:
       - name: Checkout Beam preview only
         uses: actions/checkout@v4
         with:
-          repository: LevelUpGT/beam-patcher
+          repository: LevelUpRagnarok/beam-patcher
           ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
           path: beam
