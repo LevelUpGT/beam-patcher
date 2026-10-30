@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "description": "Reviewed local QA wizard backgrounds. All 3 must be present together; never fetch at build/runtime.",
+  "artworks": [
+    {
+      "asset_id": "concept-c",
+      "file": "concept-c-background.png",
+      "resource_id": 102,
+      "sha256": "14b004262f8133cbd08cf784ba91ef2070886c185f9d2fbc7b8e32d432b7766b",
+      "width": 1672,
+      "height": 941,
+      "steps": [
+        "welcome"
+      ]
+    },
+    {
+      "asset_id": "sunrise",
+      "file": "sunrise-background.png",
+      "resource_id": 103,
+      "sha256": "c9b019b93709a42f0b841a475f1d1f06f249fab10d16b09bba73288b05933bfc",
+      "width": 1672,
+      "height": 941,
+      "steps": [
+        "options",
+        "complete"
+      ]
+    },
+    {
+      "asset_id": "twilight",
+      "file": "twilight-background.png",
+      "resource_id": 104,
+      "sha256": "f907a41de5142c47e79a25a74ad140b78571463c54fe063dd099376a4403d739",
+      "width": 1672,
+      "height": 941,
+      "steps": [
+        "installing",
+        "failed"
+      ]
+    }
+  ]
+}

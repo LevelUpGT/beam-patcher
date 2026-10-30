@@ -1,0 +1,449 @@
+// Dosya Yolu: tools/windows/ragnar-turkuaz-qa/RagnarSetupWizard.cpp
+// Amac: Branded wizard icin dogrulanmis Velopack islem ve dosya erisim adapterleri
+// Modul - Windows native C++ Setup UI
+// Version: 0.4.0-qa
+// Aciklama: Embedded verified Velopack Setup, klasor secimi, kısayol tercihleri ve marka splash
+// Bagimli Oldugu Katman: Velopack Setup | TurkuazInstaller preview QA build
+// Note: Legacy dialog helpers are not invoked by the standalone QA wizard.
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <commctrl.h>
+#include <shlobj.h>
+#include <shobjidl.h>
+#include <objbase.h>
+#include <bcrypt.h>
+#include <algorithm>
+#include <array>
+#include <cwchar>
+#include <cwctype>
+#include <string>
+#include <vector>
+
+#include "setup_hash.h"
+#include "setup_identity.h"
+
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "bcrypt.lib")
+#pragma comment(lib, "user32.lib")
+
+namespace {
+constexpr int kSetupResourceId = 101;
+constexpr wchar_t kProductTitle[] = TRO_PRODUCT_NAME;
+constexpr wchar_t kShortcutFile[] = L"Turkuaz Ragnarok Online (QA).lnk";
+constexpr wchar_t kPackageExe[] = L"RagnarClassicPreview-Setup.exe";
+constexpr wchar_t kVersion[] = L"v" TRO_INSTALLER_VERSION L" - QA";
+constexpr wchar_t kInstalledLauncher[] = TRO_MAIN_EXE;
+
+struct Bytes { const BYTE* data; DWORD length; };
+
+std::wstring Message(const wchar_t* reason) {
+    return std::wstring(reason) + L"\n\nBu paket sadece gorunum testidir; oyunun dosyalari degistirilmez.";
+}
+void Alert(const std::wstring& text, UINT icon = MB_ICONERROR) {
+    MessageBoxW(nullptr, text.c_str(), TRO_WINDOW_TITLE, MB_OK | icon);
+}
+
+// TaskDialogIndirect is ordinal 345 in ComCtl32 v6. Statically importing it
+// causes Windows 10 loader error 127/ordinal 345 before wWinMain when a v5
+// comctl32 is selected. Resolve it at runtime and fail closed with a message.
+using TaskDialogIndirectFn =
+    HRESULT (WINAPI*)(const TASKDIALOGCONFIG*, int*, int*, BOOL*);
+
+bool HasTaskDialogRuntime() {
+    HMODULE library = LoadLibraryW(L"comctl32.dll");
+    if (!library) return false;
+    const bool found = GetProcAddress(library, "TaskDialogIndirect") != nullptr;
+    FreeLibrary(library);
+    return found;
+}
+
+HRESULT InvokeTaskDialog(const TASKDIALOGCONFIG* config, int* button,
+                         int* radio, BOOL* checked) {
+    HMODULE library = LoadLibraryW(L"comctl32.dll");
+    if (!library) return HRESULT_FROM_WIN32(GetLastError());
+    const auto function = reinterpret_cast<TaskDialogIndirectFn>(
+        GetProcAddress(library, "TaskDialogIndirect"));
+    if (!function) {
+        FreeLibrary(library);
+        return HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND);
+    }
+    const HRESULT result = function(config, button, radio, checked);
+    FreeLibrary(library);
+    return result;
+}
+
+Bytes EmbeddedSetup() {
+    HRSRC resource = FindResourceW(nullptr, MAKEINTRESOURCEW(kSetupResourceId), RT_RCDATA);
+    if (!resource) return {nullptr, 0};
+    const HGLOBAL loaded = LoadResource(nullptr, resource);
+    if (!loaded) return {nullptr, 0};
+    return {static_cast<const BYTE*>(LockResource(loaded)), SizeofResource(nullptr, resource)};
+}
+
+bool HashSha256(const BYTE* data, DWORD length, std::wstring& hex) {
+    BCRYPT_ALG_HANDLE algorithm = nullptr;
+    BCRYPT_HASH_HANDLE hash = nullptr;
+    DWORD objSize = 0, digestSize = 0, returned = 0;
+    bool ok = false;
+    if (BCryptOpenAlgorithmProvider(&algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, 0) < 0) return false;
+    do {
+        if (BCryptGetProperty(algorithm, BCRYPT_OBJECT_LENGTH, reinterpret_cast<PUCHAR>(&objSize),
+            sizeof(objSize), &returned, 0) < 0) break;
+        if (BCryptGetProperty(algorithm, BCRYPT_HASH_LENGTH, reinterpret_cast<PUCHAR>(&digestSize),
+            sizeof(digestSize), &returned, 0) < 0 || digestSize != 32) break;
+        std::vector<BYTE> object(objSize);
+        std::array<BYTE, 32> digest{};
+        if (BCryptCreateHash(algorithm, &hash, object.data(), objSize, nullptr, 0, 0) < 0) break;
+        if (BCryptHashData(hash, const_cast<PUCHAR>(data), length, 0) < 0) break;
+        if (BCryptFinishHash(hash, digest.data(), DWORD(digest.size()), 0) < 0) break;
+        static constexpr wchar_t digits[] = L"0123456789abcdef";
+        hex.clear();
+        for (const BYTE value : digest) {
+            hex.push_back(digits[value >> 4]);
+            hex.push_back(digits[value & 15]);
+        }
+        ok = true;
+    } while (false);
+    if (hash) BCryptDestroyHash(hash);
+    BCryptCloseAlgorithmProvider(algorithm, 0);
+    return ok;
+}
+
+bool VerifyEmbeddedSetup() {
+    const Bytes bytes = EmbeddedSetup();
+    if (!bytes.data || bytes.length < 1024) return false;
+    std::wstring actual;
+    return HashSha256(bytes.data, bytes.length, actual) &&
+           actual == std::wstring(RAGNAR_EMBEDDED_SETUP_SHA256);
+}
+
+int ChoosePage(const wchar_t* heading, const std::wstring& details,
+               const std::vector<TASKDIALOG_BUTTON>& buttons) {
+    TASKDIALOGCONFIG config{};
+    config.cbSize = sizeof(config);
+    config.hwndParent = nullptr;
+    config.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT;
+    config.pszWindowTitle = TRO_WINDOW_TITLE;
+    config.pszMainInstruction = heading;
+    config.pszContent = details.c_str();
+    config.pszMainIcon = TD_INFORMATION_ICON;
+    config.cButtons = UINT(buttons.size());
+    config.pButtons = buttons.data();
+    int clicked = IDCANCEL;
+    const HRESULT hr = InvokeTaskDialog(&config, &clicked, nullptr, nullptr);
+    return FAILED(hr) ? IDCANCEL : clicked;
+}
+
+std::wstring DefaultFolder() {
+    PWSTR folder = nullptr;
+    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &folder)) || !folder)
+        return {};
+    std::wstring base = folder;
+    CoTaskMemFree(folder);
+    return base + L"\\Programs\\RagnarClassicTurkuazQA";
+}
+
+std::wstring BrowseFolder(const std::wstring& oldValue) {
+    IFileOpenDialog* picker = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&picker)))) return {};
+    DWORD options = 0;
+    picker->GetOptions(&options);
+    picker->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST);
+    picker->SetTitle(L"Ragnar Classic icin kurulum klasoru secin");
+    IShellItem* initial = nullptr;
+    if (SUCCEEDED(SHCreateItemFromParsingName(oldValue.c_str(), nullptr, IID_PPV_ARGS(&initial)))) {
+        picker->SetFolder(initial);
+        initial->Release();
+    }
+    std::wstring chosen;
+    if (SUCCEEDED(picker->Show(nullptr))) {
+        IShellItem* item = nullptr;
+        if (SUCCEEDED(picker->GetResult(&item)) && item) {
+            PWSTR value = nullptr;
+            if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &value)) && value) {
+                chosen = value;
+                CoTaskMemFree(value);
+            }
+            item->Release();
+        }
+    }
+    picker->Release();
+    return chosen;
+}
+
+bool SafeTarget(std::wstring& folder) {
+    if (folder.empty() || folder.size() >= MAX_PATH - 60) return false;
+    wchar_t full[MAX_PATH]{};
+    const DWORD n = GetFullPathNameW(folder.c_str(), MAX_PATH, full, nullptr);
+    if (n == 0 || n >= MAX_PATH) return false;
+    folder = full;
+    if (folder.find_first_of(L"\"<>|?*") != std::wstring::npos)
+        return false;
+    if (folder.size() < 5 || folder[1] != L':' || folder[2] != L'\\') return false;
+    const std::wstring lower = [&] {
+        std::wstring copy = folder;
+        std::transform(copy.begin(), copy.end(), copy.begin(),
+                       [](wchar_t c){ return std::towlower(c); });
+        return copy;
+    }();
+    wchar_t windowsPath[MAX_PATH]{};
+    if (GetWindowsDirectoryW(windowsPath, MAX_PATH)) {
+        std::wstring win = windowsPath;
+        std::transform(win.begin(), win.end(), win.begin(), [](wchar_t c){ return std::towlower(c); });
+        if (lower == win || lower.rfind(win + L"\\", 0) == 0) return false;
+    }
+    if (folder.back() == L'\\') return false; // Reject drive roots, keep installs in own subfolder.
+    return true;
+}
+
+std::wstring MakeTempDirectory() {
+    wchar_t buffer[MAX_PATH]{};
+    const DWORD count = GetTempPathW(MAX_PATH, buffer);
+    if (count == 0 || count >= MAX_PATH) return {};
+    GUID id{};
+    if (FAILED(CoCreateGuid(&id))) return {};
+    wchar_t guid[64]{};
+    if (!StringFromGUID2(id, guid, 64)) return {};
+    std::wstring folder = std::wstring(buffer) + L"RagnarTurkuazQa-" + guid;
+    if (!CreateDirectoryW(folder.c_str(), nullptr)) return {};
+    return folder;
+}
+
+bool ExtractSetup(const std::wstring& target) {
+    const Bytes bytes = EmbeddedSetup();
+    if (!bytes.data || !VerifyEmbeddedSetup()) return false;
+    HANDLE file = CreateFileW(target.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                              FILE_ATTRIBUTE_TEMPORARY, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return false;
+    DWORD written = 0;
+    const bool ok = WriteFile(file, bytes.data, bytes.length, &written, nullptr) != 0 &&
+                    written == bytes.length && FlushFileBuffers(file) != 0;
+    CloseHandle(file);
+    if (!ok) DeleteFileW(target.c_str());
+    return ok;
+}
+
+bool RunSetup(const std::wstring& setup, const std::wstring& target, DWORD& exitCode) {
+    std::wstring arguments = L"\"" + setup + L"\" --installto \"" + target + L"\"";
+    std::vector<wchar_t> command(arguments.begin(), arguments.end());
+    command.push_back(0);
+    STARTUPINFOW startup{sizeof(startup)};
+    PROCESS_INFORMATION proc{};
+    if (!CreateProcessW(setup.c_str(), command.data(), nullptr, nullptr, FALSE, 0,
+                        nullptr, nullptr, &startup, &proc)) return false;
+    WaitForSingleObject(proc.hProcess, INFINITE);
+    const bool gotExit = GetExitCodeProcess(proc.hProcess, &exitCode) != 0;
+    CloseHandle(proc.hThread);
+    CloseHandle(proc.hProcess);
+    return gotExit;
+}
+
+std::wstring KnownFolder(REFKNOWNFOLDERID key) {
+    PWSTR path = nullptr;
+    if (FAILED(SHGetKnownFolderPath(key, 0, nullptr, &path)) || !path) return {};
+    std::wstring result = path;
+    CoTaskMemFree(path);
+    return result;
+}
+std::wstring Lower(std::wstring source) {
+    std::transform(source.begin(), source.end(), source.begin(), [](wchar_t c){ return std::towlower(c); });
+    return source;
+}
+
+// Never remove a shortcut unless it actually targets THIS newly installed preview.
+// Velopack creates both by default; the wizard removes declined destinations.
+void RemoveDeclinedShortcut(const std::wstring& directory, const std::wstring& root) {
+    if (directory.empty()) return;
+    std::wstring path = directory + L"\\" + kShortcutFile;
+    IShellLinkW* link = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&link)))) return;
+    IPersistFile* persisted = nullptr;
+    if (SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(&persisted)))) {
+        if (SUCCEEDED(persisted->Load(path.c_str(), STGM_READ))) {
+            wchar_t destination[MAX_PATH]{};
+            WIN32_FIND_DATAW info{};
+            if (SUCCEEDED(link->GetPath(destination, MAX_PATH, &info, SLGP_RAWPATH))) {
+                const auto target = Lower(destination);
+                const auto expectedRoot = Lower(root + L"\\");
+                if (target.rfind(expectedRoot, 0) == 0 &&
+                    target.size() >= wcslen(kInstalledLauncher) &&
+                    target.compare(target.size()-wcslen(kInstalledLauncher),
+                                   wcslen(kInstalledLauncher), Lower(kInstalledLauncher)) == 0) {
+                    DeleteFileW(path.c_str());
+                }
+            }
+        }
+        persisted->Release();
+    }
+    link->Release();
+}
+
+int InstallInteractive() {
+    if (!VerifyEmbeddedSetup()) {
+        Alert(Message(L"Kurulum içeriğinin SHA-256 doğrulaması başarısız.")); return 4;
+    }
+    const std::vector<TASKDIALOG_BUTTON> welcome{{100, L"Devam et"}, {IDCANCEL, L"İptal"}};
+    if (ChoosePage(TRO_PRODUCT_NAME,
+          std::wstring(L"") + kVersion +
+          L"\nTurkuaz QA | Klasik istemci arayuzu\n\n"
+          L"Bu paket sunucuya baglanmaz, patch uygulamaz ve mevcut oyun klasorune yazmaz.\n"
+          L"Kurulum yeri ve kisayollari secerek ilerleyebilirsiniz.", welcome) != 100) return 0;
+
+    std::wstring folder = DefaultFolder();
+    if (!SafeTarget(folder)) { Alert(L"Guvenli varsayilan klasor alinamadi."); return 4; }
+    for (;;) {
+        const std::vector<TASKDIALOG_BUTTON> location{{100, L"Bu klasöre kur"}, {101, L"Başka klasör seç"}, {IDCANCEL, L"Iptal"}};
+        const int answer = ChoosePage(L"Kurulum konumu", folder + L"\n\nKurulum sadece bu onizlemeyi etkiler.", location);
+        if (answer == 100) break;
+        if (answer != 101) return 0;
+        const auto picked = BrowseFolder(folder);
+        if (picked.empty()) continue;
+        std::wstring proposed = picked + L"\\RagnarClassicTurkuazQA";
+        if (!SafeTarget(proposed)) { Alert(L"Gecersiz kurulum konumu."); continue; }
+        folder = proposed;
+    }
+
+    const TASKDIALOG_BUTTON radios[] = {
+        {10, L"Masaüstü ve Başlat menüsü"},
+        {11, L"Yalnızca Başlat menüsü"},
+        {12, L"Yalnızca Masaüstü"},
+        {13, L"Kısayol oluşturma"}
+    };
+    TASKDIALOGCONFIG choices{};
+    choices.cbSize = sizeof(choices);
+    choices.pszWindowTitle = TRO_WINDOW_TITLE;
+    choices.pszMainInstruction = L"Kısayolları nereye ekleyelim?";
+    choices.pszContent = L"Seçiminiz kurulum tamamlandığında uygulanır.";
+    choices.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_SIZE_TO_CONTENT;
+    choices.cRadioButtons = ARRAYSIZE(radios);
+    choices.pRadioButtons = radios;
+    choices.nDefaultRadioButton = 10;
+    choices.dwCommonButtons = TDCBF_OK_BUTTON | TDCBF_CANCEL_BUTTON;
+    int answer = IDCANCEL, option = 10;
+    if (FAILED(InvokeTaskDialog(&choices, &answer, &option, nullptr)) || answer != IDOK) return 0;
+
+    const std::vector<TASKDIALOG_BUTTON> install{{100, L"Kur"}, {IDCANCEL, L"Iptal"}};
+    if (ChoosePage(L"Kuruluma hazır", folder +
+             L"\n\nSurum: v0.1.0 Preview\nYonetici yetkisi gerekmez.\n"
+             L"Yükleme ekranı kurulum sırasında görüntülenir.", install) != 100) return 0;
+
+    const auto tempRoot = MakeTempDirectory();
+    if (tempRoot.empty()) { Alert(L"Gecici klasor olusturulamadi."); return 4; }
+    const std::wstring setupFile = tempRoot + L"\\" + kPackageExe;
+    DWORD exitCode = 0;
+    const bool extracted = ExtractSetup(setupFile);
+    const bool ran = extracted && RunSetup(setupFile, folder, exitCode);
+    DeleteFileW(setupFile.c_str());
+    RemoveDirectoryW(tempRoot.c_str());
+    if (!ran || exitCode != 0) {
+        Alert(L"Kurulum tamamlanamadı. Hata kodu: " + std::to_wstring(exitCode));
+        return 4;
+    }
+    if (option == 11 || option == 13) RemoveDeclinedShortcut(KnownFolder(FOLDERID_Desktop), folder);
+    if (option == 12 || option == 13) RemoveDeclinedShortcut(KnownFolder(FOLDERID_Programs), folder);
+    Alert(L"Ragnar Classic önizleme kuruldu.\n\nGerçek oyun dosyaları değiştirilmedi.", MB_ICONINFORMATION);
+    return 0;
+}
+} // namespace
+
+
+// Explicit bridge for the UI file. This preserves the verified embedded
+// payload and safe native operations; it does NOT expose any game patch API.
+bool RagnarVerify() { return VerifyEmbeddedSetup(); }
+bool RagnarValidTarget(std::wstring& value) { return SafeTarget(value); }
+std::wstring RagnarDefaultTarget() { return DefaultFolder(); }
+std::wstring RagnarTempFolder() { return MakeTempDirectory(); }
+bool RagnarExtractSetup(const std::wstring& path) { return ExtractSetup(path); }
+bool RagnarDialogAvailable() { return HasTaskDialogRuntime(); }
+std::wstring RagnarLauncherPath(const std::wstring& root) {
+    return root + L"\\RagnarClassicPreview.exe";
+}
+bool RagnarSilentInstall(const std::wstring& setup, const std::wstring& target,
+                         DWORD& exitCode, std::wstring& error) {
+    // Velopack official CLI: --silent prevents second splash and post-install launch.
+    const auto logPath = setup.substr(0, setup.find_last_of(L'\\')) + L"\\velopack-install.log";
+    std::wstring args = L"\"" + setup + L"\" --silent --installto \"" +
+                        target + L"\" --log \"" + logPath + L"\"";
+    std::vector<wchar_t> buffer(args.begin(), args.end());
+    buffer.push_back(0);
+    STARTUPINFOW startup{sizeof(startup)};
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(setup.c_str(), buffer.data(), nullptr, nullptr, FALSE, 0,
+                        nullptr, nullptr, &startup, &process)) {
+        error = L"Kurulum motoru başlatılamadı. Windows hatası: " +
+                std::to_wstring(GetLastError()) + L"\nGünlük: " + logPath;
+        return false;
+    }
+    DWORD waited = WaitForSingleObject(process.hProcess, INFINITE);
+    bool okay = waited == WAIT_OBJECT_0 &&
+                GetExitCodeProcess(process.hProcess, &exitCode);
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    if (!okay || exitCode != 0) {
+        error = L"Velopack kurulum hatası: " + std::to_wstring(exitCode) +
+                L"\nGünlük: " + logPath;
+        return false;
+    }
+    // Velopack's main binary is under current/, the root stub filename can
+    // differ from --mainExe when --packTitle is provided. Never infer it.
+    const auto updater = target + L"\\Update.exe";
+    const auto currentExe = target + L"\\current\\RagnarClassicPreview.exe";
+    if (GetFileAttributesW(updater.c_str()) == INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesW(currentExe.c_str()) == INVALID_FILE_ATTRIBUTES) {
+        error = L"Kurulum dosyaları eksik: Update.exe veya current\\RagnarClassicPreview.exe "
+                L"bulunamadı.\\nGünlük: " + logPath;
+        return false;
+    }
+    DeleteFileW(logPath.c_str());
+    return true;
+}
+bool RagnarCreateShortcut(bool desktop, const std::wstring& root) {
+    const auto directory = KnownFolder(desktop ? FOLDERID_Desktop : FOLDERID_Programs);
+    if (directory.empty()) return false;
+    const auto path = directory + L"\\" + kShortcutFile;
+    // Never overwrite a user-owned shortcut. Reinstall can keep an existing one.
+    if (GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) return false;
+    IShellLinkW* link = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_ShellLink, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&link)))) return false;
+    bool saved = false;
+    // Update.exe start is Velopack's stable launch contract across upgrades.
+    const auto updater = root + L"\\Update.exe";
+    if (SUCCEEDED(link->SetPath(updater.c_str())) &&
+        SUCCEEDED(link->SetArguments(L"start RagnarClassicPreview.exe")) &&
+        SUCCEEDED(link->SetWorkingDirectory(root.c_str())) &&
+        SUCCEEDED(link->SetDescription(L"Turkuaz Ragnarok Online (QA Preview)"))) {
+        IPersistFile* persist = nullptr;
+        if (SUCCEEDED(link->QueryInterface(IID_PPV_ARGS(&persist)))) {
+            saved = SUCCEEDED(persist->Save(path.c_str(), TRUE));
+            persist->Release();
+        }
+    }
+    link->Release();
+    return saved;
+}
+bool RagnarOpenInstalled(const std::wstring& root, DWORD& error) {
+    const auto updater = root + L"\\Update.exe";
+    if (GetFileAttributesW(updater.c_str()) == INVALID_FILE_ATTRIBUTES ||
+        GetFileAttributesW((root + L"\\current\\RagnarClassicPreview.exe").c_str()) == INVALID_FILE_ATTRIBUTES) {
+        error = ERROR_FILE_NOT_FOUND;
+        return false;
+    }
+    std::wstring command = L"\"" + updater + L"\" start RagnarClassicPreview.exe";
+    std::vector<wchar_t> args(command.begin(), command.end());
+    args.push_back(0);
+    STARTUPINFOW startup{sizeof(startup)};
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(updater.c_str(), args.data(), nullptr, nullptr, FALSE,
+                        0, nullptr, root.c_str(), &startup, &process)) {
+        error = GetLastError();
+        return false;
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return true;
+}
